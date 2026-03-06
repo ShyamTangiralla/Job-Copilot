@@ -509,16 +509,14 @@ export default function JobsInbox() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {job.applyLink && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => { e.stopPropagation(); window.open(job.applyLink, "_blank"); }}
-                            data-testid={`button-apply-link-${job.id}`}
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                          </Button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/jobs/${job.id}`); }}
+                          data-testid={`button-view-detail-${job.id}`}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}

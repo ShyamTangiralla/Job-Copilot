@@ -156,7 +156,7 @@ export default function JobDetail() {
     <div className="p-6 space-y-4 max-w-4xl mx-auto">
       <Button variant="ghost" size="sm" onClick={() => navigate("/jobs")} data-testid="button-back">
         <ArrowLeft className="h-4 w-4 mr-1" />
-        Back to Jobs
+        Back to Jobs Inbox
       </Button>
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
