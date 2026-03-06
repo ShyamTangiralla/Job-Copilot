@@ -31,12 +31,13 @@ This app helps manage the job application workflow: classify jobs by role type, 
 1. **Overview** (`/`) - Dashboard with stats cards and recent jobs
 2. **Job Discovery** (`/discovery`) - Automated job search from public sources (Greenhouse, Lever, Google Jobs); configurable target roles, locations, keywords, sources; run/stop controls; results dashboard and history table
 3. **Job Intake** (`/intake`) - Import jobs via URL scraping, email alert parsing, or bulk paste; import history dashboard with stats
-4. **Jobs Inbox** (`/jobs`) - Filterable job table with Quick Add (duplicate detection), priority filter, follow-up dates
-5. **Job Detail** (`/jobs/:id`) - Full job view with status buttons, priority selector, follow-up date, missing info warnings, notes, recommended resume
-6. **Resume Vault** (`/resumes`) - CRUD for master resumes with active/inactive toggle
-7. **Candidate Profile** (`/profile`) - Personal info form and standard application answers
-8. **Tracker** (`/tracker`) - Kanban board (drag-and-drop), Table view, Analytics tab (charts for applications by day/source, interviews by resume type, pipeline summary), CSV export
-9. **Settings** (`/settings`) - Manage role categories, sources, and statuses
+4. **Quick Capture** (`/quick-capture`) - Bookmarklet helper page; drag-to-install bookmarklet that captures current browser URL and opens Job Intake with it prefilled; auto-imports on arrival
+5. **Jobs Inbox** (`/jobs`) - Filterable job table with Quick Add (duplicate detection), priority filter, follow-up dates
+6. **Job Detail** (`/jobs/:id`) - Full job view with status buttons, priority selector, follow-up date, missing info warnings, notes, recommended resume
+7. **Resume Vault** (`/resumes`) - CRUD for master resumes with active/inactive toggle
+8. **Candidate Profile** (`/profile`) - Personal info form and standard application answers
+9. **Tracker** (`/tracker`) - Kanban board (drag-and-drop), Table view, Analytics tab (charts for applications by day/source, interviews by resume type, pipeline summary), CSV export
+10. **Settings** (`/settings`) - Manage role categories, sources, and statuses
 
 ## Job Discovery System
 

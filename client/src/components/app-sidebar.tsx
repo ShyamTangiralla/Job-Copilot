@@ -9,6 +9,7 @@ import {
   Briefcase,
   Download,
   Search,
+  Bookmark,
 } from "lucide-react";
 import {
   Sidebar,
@@ -26,6 +27,7 @@ const navItems = [
   { title: "Overview", url: "/", icon: LayoutDashboard },
   { title: "Job Discovery", url: "/discovery", icon: Search },
   { title: "Job Intake", url: "/intake", icon: Download },
+  { title: "Quick Capture", url: "/quick-capture", icon: Bookmark },
   { title: "Jobs Inbox", url: "/jobs", icon: Inbox },
   { title: "Resume Vault", url: "/resumes", icon: FileText },
   { title: "Candidate Profile", url: "/profile", icon: User },

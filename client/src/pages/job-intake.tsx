@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useSearch } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -37,12 +38,13 @@ function SourceBadge({ sourceType }: { sourceType: string }) {
   }
 }
 
-function PasteUrlTab() {
-  const [url, setUrl] = useState("");
+function PasteUrlTab({ initialUrl }: { initialUrl?: string }) {
+  const [url, setUrl] = useState(initialUrl || "");
   const { toast } = useToast();
+  const autoImported = useRef(false);
 
   const mutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/intake/url", { url }),
+    mutationFn: (importUrl: string) => apiRequest("POST", "/api/intake/url", { url: importUrl }),
     onSuccess: (data: any) => {
       toast({ title: "Job Imported", description: `${data.job.title} at ${data.job.company} added to Jobs Inbox` });
       setUrl("");
@@ -55,6 +57,13 @@ function PasteUrlTab() {
       queryClient.invalidateQueries({ queryKey: ["/api/intake/history"] });
     },
   });
+
+  useEffect(() => {
+    if (initialUrl && !autoImported.current) {
+      autoImported.current = true;
+      mutation.mutate(initialUrl);
+    }
+  }, [initialUrl]);
 
   return (
     <Card>
@@ -72,7 +81,7 @@ function PasteUrlTab() {
             className="flex-1"
           />
           <Button
-            onClick={() => mutation.mutate()}
+            onClick={() => mutation.mutate(url)}
             disabled={!url.trim() || mutation.isPending}
             data-testid="button-import-url"
           >
@@ -209,6 +218,9 @@ function BulkPasteTab() {
 }
 
 export default function JobIntake() {
+  const searchString = useSearch();
+  const queryUrl = new URLSearchParams(searchString).get("url") || "";
+
   const { data: history = [], isLoading } = useQuery<ImportLog[]>({
     queryKey: ["/api/intake/history"],
   });
@@ -264,7 +276,7 @@ export default function JobIntake() {
           <TabsTrigger value="email" data-testid="tab-email"><Mail className="h-4 w-4 mr-1" />Email Alert</TabsTrigger>
           <TabsTrigger value="bulk" data-testid="tab-bulk"><List className="h-4 w-4 mr-1" />Bulk Paste</TabsTrigger>
         </TabsList>
-        <TabsContent value="url"><PasteUrlTab /></TabsContent>
+        <TabsContent value="url"><PasteUrlTab initialUrl={queryUrl} /></TabsContent>
         <TabsContent value="email"><EmailAlertTab /></TabsContent>
         <TabsContent value="bulk"><BulkPasteTab /></TabsContent>
       </Tabs>

@@ -15,6 +15,7 @@ import Tracker from "@/pages/tracker";
 import SettingsPage from "@/pages/settings";
 import JobIntake from "@/pages/job-intake";
 import JobDiscovery from "@/pages/job-discovery";
+import QuickCapture from "@/pages/quick-capture";
 
 function Router() {
   return (
@@ -28,6 +29,7 @@ function Router() {
       <Route path="/profile" component={CandidateProfilePage} />
       <Route path="/tracker" component={Tracker} />
       <Route path="/settings" component={SettingsPage} />
+      <Route path="/quick-capture" component={QuickCapture} />
       <Route component={NotFound} />
     </Switch>
   );
