@@ -201,9 +201,9 @@ export class DatabaseStorage implements IStorage {
       return {
         primaryRoles: ["Data Analyst", "Healthcare Data Analyst", "Business Analyst", "Financial Analyst", "BI Analyst"],
         secondaryRoles: ["Data Engineer", "Data Scientist"],
-        preferredLocations: ["Remote", "New York", "Chicago"],
+        preferredLocations: ["United States", "New York", "Remote"],
         workModes: ["Remote", "Hybrid", "Onsite"],
-        maxJobsPerScan: 25,
+        maxJobsPerScan: 50,
         searchKeywords: ["SQL", "Python", "Tableau", "Power BI", "healthcare analytics"],
         excludeKeywords: [],
         jobAgeFilter: "Last 7 days",
