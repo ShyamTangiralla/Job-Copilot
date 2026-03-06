@@ -24,7 +24,7 @@ This app helps manage the job application workflow: classify jobs by role type, 
 - `settings` - Configurable role categories, sources, and statuses (stored as JSONB); also stores discovery settings under key "discovery"
 - `import_log` - Tracks job import history (sourceType, sourceUrl, status, jobId, jobTitle, jobCompany, errorMessage)
 - `discovery_runs` - Tracks each discovery run (status, jobsFound, jobsImported, jobsDuplicate, jobsFailed, sourcesSearched, timestamps)
-- `discovery_results` - Individual results from discovery runs (jobTitle, jobCompany, source, importResult, isDuplicate, classification, recommendedResume)
+- `discovery_results` - Individual results from discovery runs (jobTitle, jobCompany, source, importResult, isDuplicate, classification, recommendedResume, matchScore)
 
 ## Pages
 
@@ -66,9 +66,20 @@ All imports: auto-classify role type, recommend resume, assign fit score, set st
 
 Jobs are classified based on title/description keyword matching into: Data Analyst, Healthcare Data Analyst, Healthcare Analyst, Business Analyst, or Unknown.
 
-## Fit Scoring
+## Fit Scoring (Smart Ranking)
 
-Simple label-based scoring (Strong Match, Possible Match, Weak Match) based on keyword overlap for analytics terms.
+Multi-factor scoring system evaluates discovered jobs across 5 dimensions:
+1. **Role Match** (0-30 pts): Primary roles (Data Analyst, Healthcare Data Analyst, Business Analyst, Financial Analyst, BI Analyst) = 30pts; Secondary roles (Data Engineer, Data Scientist) = 15pts
+2. **Experience Level** (-10 to +10 pts): Downranks senior/principal/director/staff/lead/manager titles; prefers analyst/associate/junior/entry
+3. **Keyword Match** (0-40 pts, 5 each): SQL, Python, Tableau, Power BI, healthcare analytics, dashboards, ETL, data visualization
+4. **Location Match** (0-10 pts): Remote, United States, New York
+5. **Source Priority** (0-5 pts): Greenhouse, Lever, Workday, Company Career Pages preferred
+
+Score categories: Strong Match (≥40), Possible Match (≥20), Weak Match (<20)
+
+Status assignment from discovery: Strong → "Ready to Apply", Possible → "New", Weak → "Skipped"
+Jobs Inbox sorts by Strong Match first.
+Discovery History table includes "Match Score" column showing Strong/Possible/Weak badges.
 
 ## API Endpoints
 

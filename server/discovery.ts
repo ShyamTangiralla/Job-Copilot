@@ -10,6 +10,8 @@ interface DiscoveredJob {
   description: string;
   applyLink: string;
   datePosted: string;
+  matchScoreNumeric?: number;
+  matchScore?: string;
 }
 
 interface DiscoveryConfig {
@@ -328,6 +330,23 @@ export async function runDiscovery(): Promise<number> {
         } catch {}
       }
 
+      for (const discovered of allDiscoveredJobs) {
+        const scored = storage.classifyAndScore({
+          title: discovered.title,
+          company: discovered.company,
+          source: discovered.source,
+          location: discovered.location,
+          workMode: discovered.workMode,
+          description: discovered.description,
+          applyLink: discovered.applyLink,
+          status: "New",
+        });
+        discovered.matchScoreNumeric = scored.matchScoreNumeric;
+        discovered.matchScore = scored.fitLabel;
+      }
+
+      allDiscoveredJobs.sort((a, b) => (b.matchScoreNumeric ?? 0) - (a.matchScoreNumeric ?? 0));
+
       if (allDiscoveredJobs.length > config.maxJobsPerScan) {
         allDiscoveredJobs = allDiscoveredJobs.slice(0, config.maxJobsPerScan);
       }
@@ -354,9 +373,15 @@ export async function runDiscovery(): Promise<number> {
               isDuplicate: true,
               classification: "",
               recommendedResume: "",
+              matchScore: discovered.matchScore ?? "",
             });
             continue;
           }
+
+          let statusFromScore: string;
+          if (discovered.matchScore === "Strong Match") statusFromScore = "Ready to Apply";
+          else if (discovered.matchScore === "Possible Match") statusFromScore = "New";
+          else statusFromScore = "Skipped";
 
           const job = await storage.createJob({
             title: discovered.title,
@@ -367,7 +392,7 @@ export async function runDiscovery(): Promise<number> {
             datePosted: discovered.datePosted,
             description: discovered.description,
             applyLink: discovered.applyLink,
-            status: "New",
+            status: statusFromScore,
           });
 
           imported++;
@@ -382,6 +407,7 @@ export async function runDiscovery(): Promise<number> {
             isDuplicate: false,
             classification: job.roleClassification,
             recommendedResume: job.resumeRecommendation,
+            matchScore: discovered.matchScore ?? "",
             jobId: job.id,
           });
 
@@ -404,6 +430,7 @@ export async function runDiscovery(): Promise<number> {
             applyLink: discovered.applyLink,
             importResult: "failed",
             isDuplicate: false,
+            matchScore: discovered.matchScore ?? "",
             errorMessage: err.message || "Unknown error",
           });
         }

@@ -140,6 +140,7 @@ export const discoveryResults = pgTable("discovery_results", {
   isDuplicate: boolean("is_duplicate").notNull().default(false),
   classification: text("classification").notNull().default(""),
   recommendedResume: text("recommended_resume").notNull().default(""),
+  matchScore: text("match_score").notNull().default(""),
   jobId: integer("job_id"),
   errorMessage: text("error_message").notNull().default(""),
   createdAt: timestamp("created_at").notNull().defaultNow(),

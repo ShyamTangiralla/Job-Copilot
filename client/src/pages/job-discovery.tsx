@@ -363,6 +363,7 @@ export default function JobDiscovery() {
                     <th className="pb-2 font-medium">Job Title</th>
                     <th className="pb-2 font-medium">Company</th>
                     <th className="pb-2 font-medium">Source</th>
+                    <th className="pb-2 font-medium">Match Score</th>
                     <th className="pb-2 font-medium">Date Found</th>
                     <th className="pb-2 font-medium">Result</th>
                     <th className="pb-2 font-medium">Duplicate</th>
@@ -376,6 +377,16 @@ export default function JobDiscovery() {
                       <td className="py-2 pr-2 max-w-[200px] truncate">{r.jobTitle || "—"}</td>
                       <td className="py-2 pr-2">{r.jobCompany || "—"}</td>
                       <td className="py-2 pr-2"><Badge variant="outline">{r.source || "—"}</Badge></td>
+                      <td className="py-2 pr-2">
+                        {r.matchScore ? (
+                          <Badge
+                            data-testid={`match-score-${r.id}`}
+                            variant={r.matchScore === "Strong Match" ? "default" : r.matchScore === "Possible Match" ? "secondary" : "outline"}
+                          >
+                            {r.matchScore === "Strong Match" ? "Strong" : r.matchScore === "Possible Match" ? "Possible" : "Weak"}
+                          </Badge>
+                        ) : "—"}
+                      </td>
                       <td className="py-2 pr-2 text-xs text-muted-foreground">{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}</td>
                       <td className="py-2 pr-2"><ResultsBadge result={r.importResult} /></td>
                       <td className="py-2 pr-2">{r.isDuplicate ? <Badge variant="secondary">Yes</Badge> : <span className="text-muted-foreground">No</span>}</td>

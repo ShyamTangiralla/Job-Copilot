@@ -105,7 +105,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createJob(data: InsertJob): Promise<Job> {
-    const classified = this.classifyAndScore(data);
+    const { matchScoreNumeric: _, ...classified } = this.classifyAndScore(data);
     const [created] = await db.insert(jobs).values(classified).returning();
     return created;
   }
@@ -115,7 +115,7 @@ export class DatabaseStorage implements IStorage {
       const existing = await this.getJob(id);
       if (existing) {
         const merged = { ...existing, ...data };
-        const reclassified = this.classifyAndScore(merged as InsertJob);
+        const { matchScoreNumeric: _, ...reclassified } = this.classifyAndScore(merged as InsertJob);
         data = { ...data, roleClassification: reclassified.roleClassification, fitLabel: reclassified.fitLabel, resumeRecommendation: reclassified.resumeRecommendation };
       }
     }
@@ -262,10 +262,12 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(discoveryResults).orderBy(desc(discoveryResults.createdAt)).limit(50);
   }
 
-  private classifyAndScore(data: InsertJob): InsertJob {
+  classifyAndScore(data: InsertJob): InsertJob & { matchScoreNumeric: number } {
     const title = (data.title ?? "").toLowerCase();
     const desc = (data.description ?? "").toLowerCase();
     const combined = `${title} ${desc}`;
+    const source = (data.source ?? "").toLowerCase();
+    const location = (data.location ?? "").toLowerCase();
 
     let roleClassification = "Unknown";
     if (combined.includes("healthcare") && combined.includes("data analyst")) {
@@ -274,19 +276,42 @@ export class DatabaseStorage implements IStorage {
       roleClassification = "Healthcare Analyst";
     } else if (combined.includes("business analyst")) {
       roleClassification = "Business Analyst";
+    } else if (combined.includes("financial analyst")) {
+      roleClassification = "Financial Analyst";
+    } else if (combined.includes("bi analyst") || combined.includes("business intelligence analyst")) {
+      roleClassification = "BI Analyst";
     } else if (combined.includes("data analyst")) {
       roleClassification = "Data Analyst";
     }
 
-    let fitLabel = "Weak Match";
     let score = 0;
-    const keywords = ["sql", "python", "excel", "tableau", "power bi", "data", "analytics", "reporting", "dashboard", "etl"];
-    keywords.forEach((kw) => {
-      if (combined.includes(kw)) score++;
+
+    const primaryRoles = ["data analyst", "healthcare data analyst", "business analyst", "financial analyst", "bi analyst"];
+    const secondaryRoles = ["data engineer", "data scientist"];
+    if (primaryRoles.some(r => title.includes(r))) score += 30;
+    else if (secondaryRoles.some(r => title.includes(r))) score += 15;
+    else score += 0;
+
+    const seniorTerms = ["senior", "principal", "director", "staff", "lead", "manager"];
+    const juniorTerms = ["analyst", "associate", "junior", "entry"];
+    if (seniorTerms.some(t => title.includes(t))) score -= 10;
+    if (juniorTerms.some(t => title.includes(t))) score += 10;
+
+    const keywords = ["sql", "python", "tableau", "power bi", "healthcare analytics", "dashboards", "etl", "data visualization"];
+    keywords.forEach(kw => {
+      if (combined.includes(kw)) score += 5;
     });
-    if (title.includes("analyst")) score += 2;
-    if (score >= 5) fitLabel = "Strong Match";
-    else if (score >= 2) fitLabel = "Possible Match";
+
+    const preferredLocations = ["remote", "united states", "new york"];
+    if (preferredLocations.some(loc => location.includes(loc) || combined.includes(loc))) score += 10;
+
+    const preferredSources = ["greenhouse", "lever", "workday", "company career"];
+    if (preferredSources.some(s => source.includes(s))) score += 5;
+
+    let fitLabel: string;
+    if (score >= 40) fitLabel = "Strong Match";
+    else if (score >= 20) fitLabel = "Possible Match";
+    else fitLabel = "Weak Match";
 
     let resumeRecommendation = "";
     if (roleClassification !== "Unknown") {
@@ -298,6 +323,7 @@ export class DatabaseStorage implements IStorage {
       roleClassification,
       fitLabel,
       resumeRecommendation,
+      matchScoreNumeric: score,
     };
   }
 }

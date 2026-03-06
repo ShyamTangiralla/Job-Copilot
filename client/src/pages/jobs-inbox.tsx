@@ -132,6 +132,9 @@ export default function JobsInbox() {
     if (filterSource !== "all" && job.source !== filterSource) return false;
     if (filterPriority !== "all" && job.priority !== filterPriority) return false;
     return true;
+  }).sort((a, b) => {
+    const fitOrder: Record<string, number> = { "Strong Match": 0, "Possible Match": 1, "Weak Match": 2, "": 3 };
+    return (fitOrder[a.fitLabel] ?? 3) - (fitOrder[b.fitLabel] ?? 3);
   });
 
   const fitColor: Record<string, string> = {
