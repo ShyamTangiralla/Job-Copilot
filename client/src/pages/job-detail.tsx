@@ -90,7 +90,7 @@ export default function JobDetail() {
   };
 
   const recommendedResume = resumes?.find(
-    (r) => r.roleType === job?.roleClassification && r.active
+    (r) => r.roleType === (job?.resumeRecommendation || job?.roleClassification) && r.active
   );
 
   const missingInfo = useMemo(() => {
@@ -118,8 +118,9 @@ export default function JobDetail() {
       warnings.push("Job mentions relocation but your relocation preference is not set");
     }
 
-    if (!recommendedResume && job.roleClassification !== "Unknown") {
-      warnings.push(`No active resume found for role type "${job.roleClassification}"`);
+    const recType = job.resumeRecommendation || job.roleClassification;
+    if (!recommendedResume && recType && recType !== "Unknown") {
+      warnings.push(`No active resume found for role type "${recType}"`);
     }
 
     return warnings;
@@ -204,7 +205,7 @@ export default function JobDetail() {
         {job.resumeRecommendation && (
           <span className="text-sm text-muted-foreground flex items-center gap-1">
             <FileText className="h-3.5 w-3.5" />
-            Recommended: {job.resumeRecommendation}
+            Recommended: {recommendedResume ? recommendedResume.name : job.resumeRecommendation}
           </span>
         )}
       </div>

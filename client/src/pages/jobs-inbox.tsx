@@ -44,7 +44,7 @@ import {
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Job } from "@shared/schema";
+import type { Job, Resume } from "@shared/schema";
 import { JOB_STATUSES, WORK_MODES, PRIORITIES } from "@shared/schema";
 
 interface SettingsData {
@@ -75,6 +75,16 @@ export default function JobsInbox() {
   });
 
   const roleTypes = settings?.roleCategories ?? [];
+
+  const { data: resumes } = useQuery<Resume[]>({
+    queryKey: ["/api/resumes"],
+  });
+
+  const getRecommendedResumeName = (job: Job) => {
+    if (!resumes || !job.resumeRecommendation) return null;
+    const match = resumes.find((r) => r.roleType === job.resumeRecommendation && r.active);
+    return match?.name ?? null;
+  };
 
   const createJob = useMutation({
     mutationFn: async (data: any) => {
@@ -440,6 +450,7 @@ export default function JobsInbox() {
                     <TableHead>Mode</TableHead>
                     <TableHead>Priority</TableHead>
                     <TableHead>Classification</TableHead>
+                    <TableHead>Recommended Resume</TableHead>
                     <TableHead>Fit</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
@@ -473,6 +484,18 @@ export default function JobsInbox() {
                         </span>
                       </TableCell>
                       <TableCell className="text-sm">{job.roleClassification}</TableCell>
+                      <TableCell>
+                        {(() => {
+                          const resumeName = getRecommendedResumeName(job);
+                          return resumeName ? (
+                            <span className="text-sm" data-testid={`text-recommended-resume-${job.id}`}>{resumeName}</span>
+                          ) : job.resumeRecommendation ? (
+                            <span className="text-xs text-muted-foreground italic" data-testid={`text-recommended-resume-${job.id}`}>No active resume</span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          );
+                        })()}
+                      </TableCell>
                       <TableCell>
                         {job.fitLabel && (
                           <Badge variant={fitColor[job.fitLabel] as any ?? "secondary"} className="text-xs">
