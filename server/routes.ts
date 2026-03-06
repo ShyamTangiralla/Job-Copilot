@@ -92,6 +92,16 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/jobs/check-duplicate", async (req, res) => {
+    try {
+      const { title, company, applyLink } = req.body;
+      const duplicate = await storage.checkDuplicate(title || "", company || "", applyLink || "");
+      res.json({ isDuplicate: !!duplicate, existingJob: duplicate });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   app.post("/api/jobs", async (req, res) => {
     try {
       const parsed = insertJobSchema.parse(req.body);
@@ -122,6 +132,30 @@ export async function registerRoutes(
       const id = parseInt(req.params.id);
       await storage.deleteJob(id);
       res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/jobs/export/csv", async (_req, res) => {
+    try {
+      const list = await storage.getJobs();
+      const headers = ["Title", "Company", "Source", "Location", "Work Mode", "Date Posted", "Role Classification", "Resume Recommendation", "Fit Label", "Status", "Priority", "Follow-Up Date", "Apply Link", "Notes"];
+      const escape = (val: string) => {
+        if (val.includes(",") || val.includes('"') || val.includes("\n")) {
+          return `"${val.replace(/"/g, '""')}"`;
+        }
+        return val;
+      };
+      const rows = list.map((j) => [
+        j.title, j.company, j.source, j.location, j.workMode, j.datePosted,
+        j.roleClassification, j.resumeRecommendation, j.fitLabel, j.status,
+        j.priority, j.followUpDate, j.applyLink, j.notes,
+      ].map((v) => escape(v ?? "")).join(","));
+      const csv = [headers.join(","), ...rows].join("\n");
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=jobs_export.csv");
+      res.send(csv);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

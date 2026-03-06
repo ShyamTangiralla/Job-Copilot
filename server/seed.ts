@@ -63,7 +63,9 @@ export async function seedDatabase() {
       fitLabel: "Strong Match",
       resumeRecommendation: "Data Analyst",
       status: "New",
+      priority: "High",
       notes: "",
+      followUpDate: "",
     },
     {
       title: "Healthcare Data Analyst",
@@ -78,7 +80,9 @@ export async function seedDatabase() {
       fitLabel: "Strong Match",
       resumeRecommendation: "Healthcare Data Analyst",
       status: "Reviewed",
+      priority: "High",
       notes: "Great fit - remote position with healthcare focus",
+      followUpDate: "2026-03-10",
     },
     {
       title: "Business Analyst - Operations",
@@ -93,7 +97,9 @@ export async function seedDatabase() {
       fitLabel: "Possible Match",
       resumeRecommendation: "Business Analyst",
       status: "Ready to Apply",
+      priority: "Medium",
       notes: "Onsite in NYC - would need relocation",
+      followUpDate: "2026-03-12",
     },
     {
       title: "Senior Data Analyst",
@@ -108,7 +114,9 @@ export async function seedDatabase() {
       fitLabel: "Possible Match",
       resumeRecommendation: "Data Analyst",
       status: "Applied",
+      priority: "Medium",
       notes: "Applied on March 2. Waiting for response.",
+      followUpDate: "2026-03-08",
     },
     {
       title: "Healthcare Analyst - Quality Improvement",
@@ -123,7 +131,9 @@ export async function seedDatabase() {
       fitLabel: "Strong Match",
       resumeRecommendation: "Healthcare Analyst",
       status: "Interview",
+      priority: "High",
       notes: "Phone interview scheduled for March 10",
+      followUpDate: "2026-03-10",
     },
     {
       title: "Junior Data Analyst",
@@ -138,7 +148,9 @@ export async function seedDatabase() {
       fitLabel: "Weak Match",
       resumeRecommendation: "Data Analyst",
       status: "Skipped",
+      priority: "Low",
       notes: "Too junior for my experience level",
+      followUpDate: "",
     },
   ];
 

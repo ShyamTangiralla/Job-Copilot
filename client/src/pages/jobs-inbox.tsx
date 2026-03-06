@@ -31,16 +31,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Alert,
+  AlertDescription,
+} from "@/components/ui/alert";
+import {
   Plus,
   Search,
   ExternalLink,
   Filter,
   X,
+  AlertTriangle,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Job } from "@shared/schema";
-import { JOB_STATUSES, ROLE_TYPES, WORK_MODES } from "@shared/schema";
+import { JOB_STATUSES, ROLE_TYPES, WORK_MODES, PRIORITIES } from "@shared/schema";
 
 export default function JobsInbox() {
   const { toast } = useToast();
@@ -50,8 +55,10 @@ export default function JobsInbox() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterWorkMode, setFilterWorkMode] = useState("all");
   const [filterSource, setFilterSource] = useState("all");
+  const [filterPriority, setFilterPriority] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState<Job | null>(null);
 
   const { data: jobs, isLoading } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
@@ -65,9 +72,25 @@ export default function JobsInbox() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       setDialogOpen(false);
+      setDuplicateWarning(null);
       toast({ title: "Job added successfully" });
     },
   });
+
+  const checkDuplicate = async (title: string, company: string, applyLink: string) => {
+    if (!title || !company) return;
+    try {
+      const res = await apiRequest("POST", "/api/jobs/check-duplicate", { title, company, applyLink });
+      const data = await res.json();
+      if (data.isDuplicate) {
+        setDuplicateWarning(data.existingJob);
+      } else {
+        setDuplicateWarning(null);
+      }
+    } catch {
+      setDuplicateWarning(null);
+    }
+  };
 
   const sources = [...new Set(jobs?.map((j) => j.source).filter(Boolean) ?? [])];
 
@@ -85,6 +108,7 @@ export default function JobsInbox() {
     if (filterStatus !== "all" && job.status !== filterStatus) return false;
     if (filterWorkMode !== "all" && job.workMode !== filterWorkMode) return false;
     if (filterSource !== "all" && job.source !== filterSource) return false;
+    if (filterPriority !== "all" && job.priority !== filterPriority) return false;
     return true;
   });
 
@@ -104,6 +128,12 @@ export default function JobsInbox() {
     Rejected: "destructive",
   };
 
+  const priorityColor: Record<string, string> = {
+    High: "text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30",
+    Medium: "text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30",
+    Low: "text-muted-foreground bg-muted/40",
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -116,9 +146,13 @@ export default function JobsInbox() {
       datePosted: fd.get("datePosted") as string,
       description: fd.get("description") as string,
       applyLink: fd.get("applyLink") as string,
+      priority: fd.get("priority") as string,
       notes: fd.get("notes") as string,
+      followUpDate: fd.get("followUpDate") as string,
     });
   };
+
+  const activeFilterCount = [filterRole, filterStatus, filterWorkMode, filterSource, filterPriority].filter((f) => f !== "all").length;
 
   return (
     <div className="p-6 space-y-4 max-w-7xl mx-auto">
@@ -129,26 +163,58 @@ export default function JobsInbox() {
             {filtered.length} job{filtered.length !== 1 ? "s" : ""} found
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setDuplicateWarning(null); }}>
           <DialogTrigger asChild>
             <Button data-testid="button-add-job">
               <Plus className="h-4 w-4 mr-1" />
-              Add Job
+              Quick Add Job
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Add New Job</DialogTitle>
+              <DialogTitle>Quick Add Job</DialogTitle>
             </DialogHeader>
+            {duplicateWarning && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Possible duplicate found: "{duplicateWarning.title}" at {duplicateWarning.company} (Status: {duplicateWarning.status}). You can still add it.
+                </AlertDescription>
+              </Alert>
+            )}
             <form onSubmit={handleSubmit} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label htmlFor="title">Job Title *</Label>
-                  <Input id="title" name="title" required data-testid="input-job-title" />
+                  <Input
+                    id="title"
+                    name="title"
+                    required
+                    onBlur={(e) => {
+                      const form = e.target.closest("form");
+                      if (form) {
+                        const fd = new FormData(form);
+                        checkDuplicate(fd.get("title") as string, fd.get("company") as string, fd.get("applyLink") as string);
+                      }
+                    }}
+                    data-testid="input-job-title"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="company">Company *</Label>
-                  <Input id="company" name="company" required data-testid="input-job-company" />
+                  <Input
+                    id="company"
+                    name="company"
+                    required
+                    onBlur={(e) => {
+                      const form = e.target.closest("form");
+                      if (form) {
+                        const fd = new FormData(form);
+                        checkDuplicate(fd.get("title") as string, fd.get("company") as string, fd.get("applyLink") as string);
+                      }
+                    }}
+                    data-testid="input-job-company"
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -161,7 +227,7 @@ export default function JobsInbox() {
                   <Input id="location" name="location" data-testid="input-job-location" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <Label htmlFor="workMode">Work Mode</Label>
                   <select name="workMode" id="workMode" className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm" data-testid="select-work-mode">
@@ -174,21 +240,51 @@ export default function JobsInbox() {
                   <Label htmlFor="datePosted">Date Posted</Label>
                   <Input id="datePosted" name="datePosted" type="date" data-testid="input-date-posted" />
                 </div>
+                <div className="space-y-1">
+                  <Label htmlFor="priority">Priority</Label>
+                  <select name="priority" id="priority" className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm" data-testid="select-priority">
+                    {PRIORITIES.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="applyLink">Apply Link</Label>
-                <Input id="applyLink" name="applyLink" type="url" placeholder="https://..." data-testid="input-apply-link" />
+                <Input
+                  id="applyLink"
+                  name="applyLink"
+                  type="url"
+                  placeholder="https://..."
+                  onBlur={(e) => {
+                    const form = e.target.closest("form");
+                    if (form) {
+                      const fd = new FormData(form);
+                      checkDuplicate(fd.get("title") as string, fd.get("company") as string, fd.get("applyLink") as string);
+                    }
+                  }}
+                  data-testid="input-apply-link"
+                />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="description">Job Description</Label>
-                <Textarea id="description" name="description" rows={4} data-testid="input-description" />
+                <Textarea id="description" name="description" rows={5} placeholder="Paste the full job description here..." data-testid="input-description" />
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="notes">Notes</Label>
-                <Textarea id="notes" name="notes" rows={2} data-testid="input-notes" />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="notes">Notes</Label>
+                  <Textarea id="notes" name="notes" rows={2} data-testid="input-notes" />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="followUpDate">Follow-up Date</Label>
+                  <Input id="followUpDate" name="followUpDate" type="date" data-testid="input-followup-date" />
+                </div>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Role type and resume recommendation will be auto-classified based on title and description.
+              </p>
               <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)} data-testid="button-cancel-job">
+                <Button type="button" variant="secondary" onClick={() => { setDialogOpen(false); setDuplicateWarning(null); }} data-testid="button-cancel-job">
                   Cancel
                 </Button>
                 <Button type="submit" disabled={createJob.isPending} data-testid="button-submit-job">
@@ -218,9 +314,9 @@ export default function JobsInbox() {
         >
           <Filter className="h-4 w-4 mr-1" />
           Filters
-          {(filterRole !== "all" || filterStatus !== "all" || filterWorkMode !== "all" || filterSource !== "all") && (
+          {activeFilterCount > 0 && (
             <span className="ml-1 h-4 w-4 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">
-              {[filterRole, filterStatus, filterWorkMode, filterSource].filter((f) => f !== "all").length}
+              {activeFilterCount}
             </span>
           )}
         </Button>
@@ -266,6 +362,18 @@ export default function JobsInbox() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1 min-w-[140px]">
+                <Label className="text-xs">Priority</Label>
+                <Select value={filterPriority} onValueChange={setFilterPriority}>
+                  <SelectTrigger data-testid="select-filter-priority"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Priorities</SelectItem>
+                    {PRIORITIES.map((p) => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               {sources.length > 0 && (
                 <div className="space-y-1 min-w-[140px]">
                   <Label className="text-xs">Source</Label>
@@ -284,7 +392,7 @@ export default function JobsInbox() {
                 variant="secondary"
                 size="sm"
                 className="mt-5"
-                onClick={() => { setFilterRole("all"); setFilterStatus("all"); setFilterWorkMode("all"); setFilterSource("all"); }}
+                onClick={() => { setFilterRole("all"); setFilterStatus("all"); setFilterWorkMode("all"); setFilterSource("all"); setFilterPriority("all"); }}
                 data-testid="button-clear-filters"
               >
                 <X className="h-3 w-3 mr-1" />
@@ -305,7 +413,7 @@ export default function JobsInbox() {
             </div>
           ) : filtered.length === 0 ? (
             <div className="p-12 text-center">
-              <Inbox className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+              <Search className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
               <p className="text-sm text-muted-foreground">No jobs found. Add your first job to get started.</p>
             </div>
           ) : (
@@ -318,6 +426,7 @@ export default function JobsInbox() {
                     <TableHead>Source</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Mode</TableHead>
+                    <TableHead>Priority</TableHead>
                     <TableHead>Classification</TableHead>
                     <TableHead>Fit</TableHead>
                     <TableHead>Status</TableHead>
@@ -332,12 +441,24 @@ export default function JobsInbox() {
                       onClick={() => navigate(`/jobs/${job.id}`)}
                       data-testid={`row-job-${job.id}`}
                     >
-                      <TableCell className="font-medium">{job.title}</TableCell>
+                      <TableCell>
+                        <span className="font-medium">{job.title}</span>
+                        {job.followUpDate && (
+                          <span className="block text-xs text-muted-foreground mt-0.5">
+                            Follow-up: {job.followUpDate}
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell>{job.company}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">{job.source}</TableCell>
                       <TableCell className="text-sm">{job.location}</TableCell>
                       <TableCell>
                         <Badge variant="secondary" className="text-xs">{job.workMode}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-md ${priorityColor[job.priority] ?? ""}`}>
+                          {job.priority}
+                        </span>
                       </TableCell>
                       <TableCell className="text-sm">{job.roleClassification}</TableCell>
                       <TableCell>

@@ -9,7 +9,7 @@ import {
   ROLE_TYPES,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, ilike } from "drizzle-orm";
 
 export interface IStorage {
   getProfile(): Promise<CandidateProfile | undefined>;
@@ -26,6 +26,7 @@ export interface IStorage {
   createJob(data: InsertJob): Promise<Job>;
   updateJob(id: number, data: Partial<InsertJob>): Promise<Job | undefined>;
   deleteJob(id: number): Promise<void>;
+  checkDuplicate(title: string, company: string, applyLink: string): Promise<Job | null>;
 
   getAnswers(): Promise<ApplicationAnswer[]>;
   createAnswer(data: InsertApplicationAnswer): Promise<ApplicationAnswer>;
@@ -107,6 +108,20 @@ export class DatabaseStorage implements IStorage {
 
   async deleteJob(id: number): Promise<void> {
     await db.delete(jobs).where(eq(jobs.id, id));
+  }
+
+  async checkDuplicate(title: string, company: string, applyLink: string): Promise<Job | null> {
+    const conditions = [
+      and(ilike(jobs.title, title), ilike(jobs.company, company)),
+    ];
+    if (applyLink) {
+      conditions.push(eq(jobs.applyLink, applyLink));
+    }
+    for (const cond of conditions) {
+      const rows = await db.select().from(jobs).where(cond!).limit(1);
+      if (rows.length > 0) return rows[0];
+    }
+    return null;
   }
 
   async getAnswers(): Promise<ApplicationAnswer[]> {

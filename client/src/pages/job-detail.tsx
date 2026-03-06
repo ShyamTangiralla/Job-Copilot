@@ -3,9 +3,23 @@ import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   ArrowLeft,
   ExternalLink,
@@ -13,20 +27,23 @@ import {
   MapPin,
   Building,
   Calendar,
-  Globe,
   User,
+  AlertTriangle,
+  Clock,
+  Flag,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Job, CandidateProfile, Resume, ApplicationAnswer } from "@shared/schema";
-import { JOB_STATUSES } from "@shared/schema";
-import { useState, useEffect } from "react";
+import { JOB_STATUSES, PRIORITIES } from "@shared/schema";
+import { useState, useEffect, useMemo } from "react";
 
 export default function JobDetail() {
   const params = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [notes, setNotes] = useState("");
+  const [followUpDate, setFollowUpDate] = useState("");
 
   const { data: job, isLoading } = useQuery<Job>({
     queryKey: ["/api/jobs", params.id],
@@ -45,43 +62,73 @@ export default function JobDetail() {
   });
 
   useEffect(() => {
-    if (job) setNotes(job.notes);
+    if (job) {
+      setNotes(job.notes);
+      setFollowUpDate(job.followUpDate ?? "");
+    }
   }, [job]);
 
-  const updateStatus = useMutation({
-    mutationFn: async (status: string) => {
-      const res = await apiRequest("PATCH", `/api/jobs/${params.id}`, { status });
+  const updateJob = useMutation({
+    mutationFn: async (data: Record<string, any>) => {
+      const res = await apiRequest("PATCH", `/api/jobs/${params.id}`, data);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/jobs", params.id] });
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
-      toast({ title: "Status updated" });
     },
   });
 
-  const updateNotes = useMutation({
-    mutationFn: async (notesVal: string) => {
-      const res = await apiRequest("PATCH", `/api/jobs/${params.id}`, { notes: notesVal });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs", params.id] });
-    },
-  });
+  const updateStatus = (status: string) => {
+    updateJob.mutate({ status });
+    toast({ title: `Status updated to ${status}` });
+  };
+
+  const updatePriority = (priority: string) => {
+    updateJob.mutate({ priority });
+    toast({ title: `Priority set to ${priority}` });
+  };
 
   const recommendedResume = resumes?.find(
     (r) => r.roleType === job?.roleClassification && r.active
   );
 
-  const statusColors: Record<string, string> = {
-    New: "secondary",
-    Reviewed: "default",
-    "Ready to Apply": "default",
-    Applied: "default",
-    Skipped: "secondary",
-    Interview: "default",
-    Rejected: "destructive",
+  const missingInfo = useMemo(() => {
+    if (!profile || !job) return [];
+    const warnings: string[] = [];
+    const desc = (job.description ?? "").toLowerCase();
+
+    if (!profile.fullName) warnings.push("Full name is not set in your profile");
+    if (!profile.email) warnings.push("Email is not set in your profile");
+    if (!profile.phone) warnings.push("Phone number is not set in your profile");
+
+    if (desc.includes("linkedin") && !profile.linkedinUrl) {
+      warnings.push("Job mentions LinkedIn but your LinkedIn URL is not saved");
+    }
+    if (desc.includes("portfolio") && !profile.portfolioUrl) {
+      warnings.push("Job mentions portfolio but your Portfolio URL is not saved");
+    }
+    if ((desc.includes("authorization") || desc.includes("work authorization") || desc.includes("visa")) && !profile.workAuthorization) {
+      warnings.push("Job mentions work authorization but yours is not set");
+    }
+    if ((desc.includes("salary") || desc.includes("compensation")) && !profile.salaryPreference) {
+      warnings.push("Job mentions salary/compensation but your preference is not saved");
+    }
+    if ((desc.includes("relocat") || desc.includes("relocation")) && !profile.willingToRelocate && !profile.preferredLocations) {
+      warnings.push("Job mentions relocation but your relocation preference is not set");
+    }
+
+    if (!recommendedResume && job.roleClassification !== "Unknown") {
+      warnings.push(`No active resume found for role type "${job.roleClassification}"`);
+    }
+
+    return warnings;
+  }, [profile, job, recommendedResume]);
+
+  const priorityColor: Record<string, string> = {
+    High: "text-red-600 dark:text-red-400",
+    Medium: "text-amber-600 dark:text-amber-400",
+    Low: "text-muted-foreground",
   };
 
   if (isLoading) {
@@ -162,6 +209,20 @@ export default function JobDetail() {
         )}
       </div>
 
+      {missingInfo.length > 0 && (
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle className="text-sm font-medium">Missing Information</AlertTitle>
+          <AlertDescription>
+            <ul className="text-sm list-disc pl-4 mt-1 space-y-0.5">
+              {missingInfo.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-sm text-muted-foreground mr-1">Status:</span>
         {JOB_STATUSES.map((s) => (
@@ -169,13 +230,46 @@ export default function JobDetail() {
             key={s}
             variant={job.status === s ? "default" : "secondary"}
             size="sm"
-            onClick={() => updateStatus.mutate(s)}
-            disabled={updateStatus.isPending}
+            onClick={() => updateStatus(s)}
+            disabled={updateJob.isPending}
             data-testid={`button-status-${s.toLowerCase().replace(/\s+/g, "-")}`}
           >
             {s}
           </Button>
         ))}
+      </div>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Flag className={`h-4 w-4 ${priorityColor[job.priority] ?? ""}`} />
+          <span className="text-sm text-muted-foreground">Priority:</span>
+          <Select value={job.priority} onValueChange={updatePriority}>
+            <SelectTrigger className="w-[120px]" data-testid="select-priority">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PRIORITIES.map((p) => (
+                <SelectItem key={p} value={p}>{p}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Clock className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Follow-up:</span>
+          <Input
+            type="date"
+            value={followUpDate}
+            onChange={(e) => setFollowUpDate(e.target.value)}
+            onBlur={() => {
+              if (followUpDate !== (job.followUpDate ?? "")) {
+                updateJob.mutate({ followUpDate });
+              }
+            }}
+            className="w-[160px]"
+            data-testid="input-followup-date"
+          />
+        </div>
       </div>
 
       <Separator />
@@ -206,7 +300,7 @@ export default function JobDetail() {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 onBlur={() => {
-                  if (notes !== job.notes) updateNotes.mutate(notes);
+                  if (notes !== job.notes) updateJob.mutate({ notes });
                 }}
                 rows={3}
                 placeholder="Add notes about this application..."
@@ -232,7 +326,7 @@ export default function JobDetail() {
             </Card>
           )}
 
-          {profile && (
+          {profile && profile.fullName && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base font-medium flex items-center gap-1.5">
@@ -241,7 +335,7 @@ export default function JobDetail() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1 text-sm">
-                {profile.fullName && <p className="font-medium">{profile.fullName}</p>}
+                <p className="font-medium">{profile.fullName}</p>
                 {profile.email && <p className="text-muted-foreground">{profile.email}</p>}
                 {profile.phone && <p className="text-muted-foreground">{profile.phone}</p>}
                 {profile.location && <p className="text-muted-foreground">{profile.location}</p>}
