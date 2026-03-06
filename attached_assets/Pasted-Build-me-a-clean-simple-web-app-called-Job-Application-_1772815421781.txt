@@ -1,0 +1,137 @@
+Build me a clean, simple web app called "Job Application Copilot".
+
+Goal:
+This app helps me manage high-volume job applications using my pre-approved master resumes. I do not want to tailor resumes for each job. I want the app to classify jobs by role type, recommend the best matching resume, prepare my saved application details, and track the job application workflow. I want a human approval step before final submission.
+
+Main requirements:
+1. Create a dashboard with these sections:
+   - Overview
+   - Jobs Inbox
+   - Resume Vault
+   - Candidate Profile
+   - Tracker
+   - Settings
+
+2. Candidate Profile page:
+   Save my personal information and standard answers:
+   - Full name
+   - Email
+   - Phone
+   - Location
+   - LinkedIn URL
+   - Portfolio URL
+   - Work authorization
+   - Sponsorship requirement
+   - Salary preference
+   - Willing to relocate
+   - Preferred job locations
+   - Preferred job types: remote, hybrid, onsite
+   - Years of experience
+   - Standard answers for common application questions
+
+3. Resume Vault page:
+   Let me upload and store multiple resume versions with these labels:
+   - Data Analyst
+   - Healthcare Data Analyst
+   - Healthcare Analyst
+   - Business Analyst
+   For each resume, store:
+   - resume name
+   - role type
+   - file upload
+   - plain text version
+   - last updated date
+   - active/inactive toggle
+
+4. Jobs Inbox page:
+   Display jobs in a table with columns:
+   - Job title
+   - Company
+   - Source
+   - Location
+   - Remote/Hybrid/Onsite
+   - Date posted
+   - Resume recommendation
+   - Fit label
+   - Status
+   - Apply link
+   - Notes
+   Add filters:
+   - keyword
+   - role type
+   - source
+   - date posted
+   - remote/hybrid/onsite
+   - company
+   - status
+
+5. Job classification logic:
+   For each job, classify it into one of these:
+   - Data Analyst
+   - Healthcare Data Analyst
+   - Healthcare Analyst
+   - Business Analyst
+   - Unknown
+   Then recommend the matching active resume from Resume Vault.
+
+6. Fit logic:
+   Do not use complex ATS scoring.
+   Instead use simple labels:
+   - Strong Match
+   - Possible Match
+   - Weak Match
+   Based on title match, keyword overlap, location match, and seniority fit.
+
+7. Review / Apply flow:
+   When I click a job, show a detail page with:
+   - full job description
+   - recommended resume
+   - my saved personal information
+   - my standard answers
+   - notes
+   - quick status buttons:
+     Reviewed
+     Ready to Apply
+     Applied
+     Skipped
+     Interview
+     Rejected
+   Include a button to open the external apply link.
+
+8. Tracker page:
+   Show all jobs with status and include summary cards:
+   - jobs added today
+   - reviewed today
+   - applied today
+   - skipped
+   - interviews
+   - rejected
+   - applications by source
+   - applications by resume type
+
+9. UI requirements:
+   - clean modern layout
+   - easy to use on laptop
+   - light professional styling
+   - table sorting
+   - search and filters
+   - status badges
+   - clear navigation sidebar
+
+10. Data model:
+   Use a simple database suitable for Replit.
+   Create tables for:
+   - candidate_profile
+   - resumes
+   - jobs
+   - application_answers
+   - activity_log
+
+11. Add sample seed data so I can test the app immediately.
+
+12. Add a Settings page where I can edit role categories, sources, and application statuses.
+
+Important behavior:
+- This app is a job application copilot, not an auto-submission bot.
+- It should help me review jobs, choose the right resume, organize applications, and track progress.
+- Keep the architecture simple and beginner-friendly.
