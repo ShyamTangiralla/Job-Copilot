@@ -96,6 +96,22 @@ export const insertSettingsSchema = createInsertSchema(settings).omit({ id: true
 export type InsertSettings = z.infer<typeof insertSettingsSchema>;
 export type Settings = typeof settings.$inferSelect;
 
+export const importLog = pgTable("import_log", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  sourceType: text("source_type").notNull(),
+  sourceUrl: text("source_url").notNull().default(""),
+  status: text("status").notNull().default("success"),
+  jobId: integer("job_id"),
+  jobTitle: text("job_title").notNull().default(""),
+  jobCompany: text("job_company").notNull().default(""),
+  errorMessage: text("error_message").notNull().default(""),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertImportLogSchema = createInsertSchema(importLog).omit({ id: true, createdAt: true });
+export type InsertImportLog = z.infer<typeof insertImportLogSchema>;
+export type ImportLog = typeof importLog.$inferSelect;
+
 export const JOB_STATUSES = ["New", "Reviewed", "Ready to Apply", "Applied", "Skipped", "Interview", "Rejected"] as const;
 export const ROLE_TYPES = ["Data Analyst", "Healthcare Data Analyst", "Healthcare Analyst", "Business Analyst", "Unknown"] as const;
 export const FIT_LABELS = ["Strong Match", "Possible Match", "Weak Match"] as const;

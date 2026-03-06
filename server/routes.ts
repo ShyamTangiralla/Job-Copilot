@@ -5,6 +5,7 @@ import path from "path";
 import fs from "fs";
 import { storage } from "./storage";
 import { insertJobSchema, insertResumeSchema, insertApplicationAnswerSchema, insertCandidateProfileSchema } from "@shared/schema";
+import { scrapeJobFromUrl, parseEmailContent, parseBulkInput } from "./scraper";
 
 const uploadsDir = path.join(process.cwd(), "uploads", "resumes");
 if (!fs.existsSync(uploadsDir)) {
@@ -340,6 +341,270 @@ export async function registerRoutes(
       res.json(s);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
+    }
+  });
+
+  async function checkDuplicate(title: string, company: string, applyLink: string): Promise<boolean> {
+    const allJobs = await storage.getJobs();
+    return allJobs.some((j) => {
+      const titleMatch = j.title.toLowerCase().trim() === title.toLowerCase().trim();
+      const companyMatch = j.company.toLowerCase().trim() === company.toLowerCase().trim();
+      const linkMatch = applyLink && j.applyLink && j.applyLink.toLowerCase().trim() === applyLink.toLowerCase().trim();
+      return (titleMatch && companyMatch) || (applyLink && linkMatch);
+    });
+  }
+
+  app.post("/api/intake/url", async (req, res) => {
+    try {
+      const { url } = req.body;
+      if (!url || typeof url !== "string") {
+        return res.status(400).json({ message: "URL is required" });
+      }
+
+      let scraped;
+      try {
+        scraped = await scrapeJobFromUrl(url);
+      } catch (err: any) {
+        await storage.createImportLog({
+          sourceType: "url",
+          sourceUrl: url,
+          status: "failed",
+          errorMessage: err.message || "Failed to scrape URL",
+        });
+        return res.status(400).json({ message: `Failed to fetch job from URL: ${err.message}` });
+      }
+
+      const isDuplicate = await checkDuplicate(scraped.title, scraped.company, scraped.applyLink);
+      if (isDuplicate) {
+        await storage.createImportLog({
+          sourceType: "url",
+          sourceUrl: url,
+          status: "duplicate",
+          jobTitle: scraped.title,
+          jobCompany: scraped.company,
+        });
+        return res.status(409).json({ message: "This job already exists in your inbox", duplicate: true });
+      }
+
+      const job = await storage.createJob({
+        title: scraped.title,
+        company: scraped.company,
+        source: scraped.source,
+        location: scraped.location,
+        workMode: scraped.workMode,
+        datePosted: scraped.datePosted,
+        description: scraped.description,
+        applyLink: scraped.applyLink,
+        status: "New",
+      });
+
+      await storage.createImportLog({
+        sourceType: "url",
+        sourceUrl: url,
+        status: "success",
+        jobId: job.id,
+        jobTitle: job.title,
+        jobCompany: job.company,
+      });
+
+      res.json({ job, message: "Job imported successfully" });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/intake/email", async (req, res) => {
+    try {
+      const { emailContent } = req.body;
+      if (!emailContent || typeof emailContent !== "string") {
+        return res.status(400).json({ message: "Email content is required" });
+      }
+
+      const parsed = parseEmailContent(emailContent);
+      if (parsed.length === 0) {
+        await storage.createImportLog({
+          sourceType: "email",
+          status: "failed",
+          errorMessage: "No jobs could be parsed from the email content",
+        });
+        return res.status(400).json({ message: "No jobs could be parsed from the email content. Try using a different format or paste individual job links.", results: [] });
+      }
+
+      const results: Array<{ title: string; company: string; status: string; jobId?: number; error?: string }> = [];
+
+      for (const parsed_job of parsed) {
+        try {
+          if (parsed_job.applyLink && !parsed_job.title) {
+            try {
+              const scraped = await scrapeJobFromUrl(parsed_job.applyLink);
+              parsed_job.title = scraped.title;
+              parsed_job.company = scraped.company;
+              parsed_job.location = scraped.location;
+            } catch {}
+          }
+
+          const title = parsed_job.title || "Untitled Position";
+          const company = parsed_job.company || "Unknown Company";
+
+          const isDuplicate = await checkDuplicate(title, company, parsed_job.applyLink);
+          if (isDuplicate) {
+            await storage.createImportLog({
+              sourceType: "email",
+              status: "duplicate",
+              jobTitle: title,
+              jobCompany: company,
+            });
+            results.push({ title, company, status: "duplicate" });
+            continue;
+          }
+
+          const job = await storage.createJob({
+            title,
+            company,
+            source: parsed_job.source || "Email Alert",
+            location: parsed_job.location || "",
+            applyLink: parsed_job.applyLink || "",
+            status: "New",
+          });
+
+          await storage.createImportLog({
+            sourceType: "email",
+            status: "success",
+            jobId: job.id,
+            jobTitle: job.title,
+            jobCompany: job.company,
+          });
+
+          results.push({ title: job.title, company: job.company, status: "success", jobId: job.id });
+        } catch (err: any) {
+          await storage.createImportLog({
+            sourceType: "email",
+            status: "failed",
+            jobTitle: parsed_job.title || "",
+            jobCompany: parsed_job.company || "",
+            errorMessage: err.message,
+          });
+          results.push({ title: parsed_job.title || "", company: parsed_job.company || "", status: "failed", error: err.message });
+        }
+      }
+
+      const imported = results.filter((r) => r.status === "success").length;
+      const duplicates = results.filter((r) => r.status === "duplicate").length;
+      const failed = results.filter((r) => r.status === "failed").length;
+
+      res.json({
+        message: `Processed ${results.length} jobs: ${imported} imported, ${duplicates} duplicates, ${failed} failed`,
+        results,
+        summary: { total: results.length, imported, duplicates, failed },
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/intake/bulk", async (req, res) => {
+    try {
+      const { content } = req.body;
+      if (!content || typeof content !== "string") {
+        return res.status(400).json({ message: "Content is required" });
+      }
+
+      const items = parseBulkInput(content);
+      if (items.length === 0) {
+        return res.status(400).json({ message: "No jobs could be parsed from the input", results: [] });
+      }
+
+      const results: Array<{ title: string; company: string; status: string; jobId?: number; error?: string }> = [];
+
+      for (const item of items) {
+        try {
+          let title = item.title || "";
+          let company = item.company || "";
+          let location = "";
+          let description = item.description || "";
+          let source = "Manual Import";
+          let applyLink = item.url || "";
+
+          if (item.url) {
+            try {
+              const scraped = await scrapeJobFromUrl(item.url);
+              title = scraped.title;
+              company = scraped.company;
+              location = scraped.location;
+              description = scraped.description;
+              source = scraped.source;
+              applyLink = scraped.applyLink;
+            } catch (err: any) {
+              await storage.createImportLog({
+                sourceType: "bulk",
+                sourceUrl: item.url,
+                status: "failed",
+                errorMessage: `Failed to scrape: ${err.message}`,
+              });
+              results.push({ title: item.url, company: "", status: "failed", error: `Failed to scrape URL: ${err.message}` });
+              continue;
+            }
+          }
+
+          if (!title) title = "Untitled Position";
+          if (!company) company = "Unknown Company";
+
+          const isDuplicate = await checkDuplicate(title, company, applyLink);
+          if (isDuplicate) {
+            await storage.createImportLog({
+              sourceType: "bulk",
+              status: "duplicate",
+              jobTitle: title,
+              jobCompany: company,
+            });
+            results.push({ title, company, status: "duplicate" });
+            continue;
+          }
+
+          const job = await storage.createJob({
+            title,
+            company,
+            source,
+            location,
+            description,
+            applyLink,
+            status: "New",
+          });
+
+          await storage.createImportLog({
+            sourceType: "bulk",
+            status: "success",
+            jobId: job.id,
+            jobTitle: job.title,
+            jobCompany: job.company,
+          });
+
+          results.push({ title: job.title, company: job.company, status: "success", jobId: job.id });
+        } catch (err: any) {
+          results.push({ title: item.title || item.url || "", company: item.company || "", status: "failed", error: err.message });
+        }
+      }
+
+      const imported = results.filter((r) => r.status === "success").length;
+      const duplicates = results.filter((r) => r.status === "duplicate").length;
+      const failed = results.filter((r) => r.status === "failed").length;
+
+      res.json({
+        message: `Processed ${results.length} items: ${imported} imported, ${duplicates} duplicates, ${failed} failed`,
+        results,
+        summary: { total: results.length, imported, duplicates, failed },
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/intake/history", async (_req, res) => {
+    try {
+      const logs = await storage.getImportLogs();
+      res.json(logs);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
     }
   });
 

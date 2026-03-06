@@ -5,7 +5,8 @@ import {
   type ApplicationAnswer, type InsertApplicationAnswer,
   type ActivityLog, type InsertActivityLog,
   type Settings, type InsertSettings,
-  candidateProfile, resumes, jobs, applicationAnswers, activityLog, settings,
+  type ImportLog, type InsertImportLog,
+  candidateProfile, resumes, jobs, applicationAnswers, activityLog, settings, importLog,
   ROLE_TYPES,
 } from "@shared/schema";
 import { db } from "./db";
@@ -37,6 +38,9 @@ export interface IStorage {
   updateSettings(data: { roleCategories: string[]; sources: string[]; statuses: string[] }): Promise<void>;
 
   logActivity(data: InsertActivityLog): Promise<ActivityLog>;
+
+  createImportLog(data: InsertImportLog): Promise<ImportLog>;
+  getImportLogs(): Promise<ImportLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -167,6 +171,15 @@ export class DatabaseStorage implements IStorage {
   async logActivity(data: InsertActivityLog): Promise<ActivityLog> {
     const [created] = await db.insert(activityLog).values(data).returning();
     return created;
+  }
+
+  async createImportLog(data: InsertImportLog): Promise<ImportLog> {
+    const [created] = await db.insert(importLog).values(data).returning();
+    return created;
+  }
+
+  async getImportLogs(): Promise<ImportLog[]> {
+    return db.select().from(importLog).orderBy(desc(importLog.createdAt)).limit(100);
   }
 
   private classifyAndScore(data: InsertJob): InsertJob {

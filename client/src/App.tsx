@@ -13,11 +13,13 @@ import ResumeVault from "@/pages/resume-vault";
 import CandidateProfilePage from "@/pages/candidate-profile";
 import Tracker from "@/pages/tracker";
 import SettingsPage from "@/pages/settings";
+import JobIntake from "@/pages/job-intake";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Overview} />
+      <Route path="/intake" component={JobIntake} />
       <Route path="/jobs" component={JobsInbox} />
       <Route path="/jobs/:id" component={JobDetail} />
       <Route path="/resumes" component={ResumeVault} />
