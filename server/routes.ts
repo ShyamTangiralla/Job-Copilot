@@ -6,6 +6,7 @@ import fs from "fs";
 import { storage } from "./storage";
 import { insertJobSchema, insertResumeSchema, insertApplicationAnswerSchema, insertCandidateProfileSchema } from "@shared/schema";
 import { scrapeJobFromUrl, parseEmailContent, parseBulkInput } from "./scraper";
+import { runDiscovery, stopDiscovery, isDiscoveryRunning } from "./discovery";
 
 const uploadsDir = path.join(process.cwd(), "uploads", "resumes");
 if (!fs.existsSync(uploadsDir)) {
@@ -603,6 +604,88 @@ export async function registerRoutes(
     try {
       const logs = await storage.getImportLogs();
       res.json(logs);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/discovery/settings", async (_req, res) => {
+    try {
+      const s = await storage.getDiscoverySettings();
+      res.json(s);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/discovery/settings", async (req, res) => {
+    try {
+      await storage.updateDiscoverySettings(req.body);
+      const s = await storage.getDiscoverySettings();
+      res.json(s);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/discovery/run", async (_req, res) => {
+    try {
+      if (isDiscoveryRunning()) {
+        return res.status(409).json({ message: "A discovery run is already in progress" });
+      }
+      const runId = await runDiscovery();
+      res.json({ runId, message: "Discovery started" });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/discovery/stop", async (_req, res) => {
+    try {
+      stopDiscovery();
+      res.json({ message: "Discovery stopped" });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/discovery/status", async (_req, res) => {
+    try {
+      const running = isDiscoveryRunning();
+      const runs = await storage.getDiscoveryRuns();
+      const latestRun = runs.length > 0 ? runs[0] : null;
+      res.json({ running, latestRun });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/discovery/runs", async (_req, res) => {
+    try {
+      const runs = await storage.getDiscoveryRuns();
+      res.json(runs);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/discovery/runs/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid run ID" });
+      const run = await storage.getDiscoveryRun(id);
+      if (!run) return res.status(404).json({ message: "Run not found" });
+      res.json(run);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/discovery/results", async (req, res) => {
+    try {
+      const runId = req.query.runId ? parseInt(req.query.runId as string) : undefined;
+      const results = runId ? await storage.getDiscoveryResults(runId) : await storage.getRecentDiscoveryResults();
+      res.json(results);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

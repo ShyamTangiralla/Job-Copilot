@@ -112,6 +112,43 @@ export const insertImportLogSchema = createInsertSchema(importLog).omit({ id: tr
 export type InsertImportLog = z.infer<typeof insertImportLogSchema>;
 export type ImportLog = typeof importLog.$inferSelect;
 
+export const discoveryRuns = pgTable("discovery_runs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  status: text("status").notNull().default("running"),
+  jobsFound: integer("jobs_found").notNull().default(0),
+  jobsImported: integer("jobs_imported").notNull().default(0),
+  jobsDuplicate: integer("jobs_duplicate").notNull().default(0),
+  jobsFailed: integer("jobs_failed").notNull().default(0),
+  sourcesSearched: text("sources_searched").array().notNull().default(sql`ARRAY[]::text[]`),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const insertDiscoveryRunSchema = createInsertSchema(discoveryRuns).omit({ id: true, startedAt: true });
+export type InsertDiscoveryRun = z.infer<typeof insertDiscoveryRunSchema>;
+export type DiscoveryRun = typeof discoveryRuns.$inferSelect;
+
+export const discoveryResults = pgTable("discovery_results", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  runId: integer("run_id").notNull(),
+  jobTitle: text("job_title").notNull().default(""),
+  jobCompany: text("job_company").notNull().default(""),
+  source: text("source").notNull().default(""),
+  location: text("location").notNull().default(""),
+  applyLink: text("apply_link").notNull().default(""),
+  importResult: text("import_result").notNull().default("pending"),
+  isDuplicate: boolean("is_duplicate").notNull().default(false),
+  classification: text("classification").notNull().default(""),
+  recommendedResume: text("recommended_resume").notNull().default(""),
+  jobId: integer("job_id"),
+  errorMessage: text("error_message").notNull().default(""),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertDiscoveryResultSchema = createInsertSchema(discoveryResults).omit({ id: true, createdAt: true });
+export type InsertDiscoveryResult = z.infer<typeof insertDiscoveryResultSchema>;
+export type DiscoveryResult = typeof discoveryResults.$inferSelect;
+
 export const JOB_STATUSES = ["New", "Reviewed", "Ready to Apply", "Applied", "Skipped", "Interview", "Rejected"] as const;
 export const ROLE_TYPES = ["Data Analyst", "Healthcare Data Analyst", "Healthcare Analyst", "Business Analyst", "Unknown"] as const;
 export const FIT_LABELS = ["Strong Match", "Possible Match", "Weak Match"] as const;

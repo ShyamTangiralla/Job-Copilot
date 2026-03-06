@@ -1,0 +1,84 @@
+Create a new section in the app called "Job Discovery".
+
+Purpose:
+This page should automatically find jobs from supported public sources and send them into the existing Job Intake / Jobs Inbox workflow.
+
+Main requirements:
+
+1. Add a new sidebar item called "Job Discovery".
+
+2. On the Job Discovery page, create a configuration panel with these fields:
+- Primary target roles
+- Secondary target roles
+- Preferred locations
+- Work modes (Remote, Hybrid, Onsite)
+- Max jobs per scan
+- Search keywords
+- Exclude keywords
+- Job age filter (Last 24 hours, Last 3 days, Last 7 days)
+
+3. Preload these default target roles:
+Primary roles:
+- Data Analyst
+- Healthcare Data Analyst
+- Business Analyst
+- Financial Analyst
+- BI Analyst
+
+Secondary roles:
+- Data Engineer
+- Data Scientist
+
+4. Add a Sources section with toggles for:
+- Google Jobs
+- Greenhouse
+- Lever
+- Workday
+- Company Career Pages
+- Email Alerts
+
+5. Add controls:
+- Run Discovery Now
+- Stop Discovery
+- Save Discovery Settings
+
+6. Build a Discovery Results pipeline:
+When a discovery run starts, the system should:
+- search jobs from enabled sources
+- collect job title, company, source, location, work mode, job description, apply link, and date posted
+- skip duplicates using title + company + apply link
+- send each discovered job into the existing Job Intake flow
+- automatically classify the role
+- recommend the correct resume from Resume Vault
+- assign fit score
+- set status = New
+
+7. Add a dashboard on the Job Discovery page showing:
+- Jobs Found
+- Imported
+- Duplicates Skipped
+- Failed Imports
+- Last Run Time
+
+8. Add a Discovery History table with columns:
+- Job Title
+- Company
+- Source
+- Date Found
+- Import Result
+- Duplicate
+- Classification
+- Recommended Resume
+
+9. Add a scheduler setting:
+- Daily
+- Twice Daily
+- Manual Only
+
+10. Add safety rules:
+- This feature should collect jobs and send them into the app
+- It should not auto-submit applications
+- It should not bypass protected login systems
+- It should keep the human final submit workflow
+
+11. Make sure discovered jobs appear in Jobs Inbox automatically after a successful import.

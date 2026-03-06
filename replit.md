@@ -21,19 +21,37 @@ This app helps manage the job application workflow: classify jobs by role type, 
 - `jobs` - Job listings with classification, fit scoring, status tracking, priority (High/Medium/Low), and follow-up dates
 - `application_answers` - Standard Q&A pairs for common application questions
 - `activity_log` - Tracks status changes and actions
-- `settings` - Configurable role categories, sources, and statuses (stored as JSONB)
+- `settings` - Configurable role categories, sources, and statuses (stored as JSONB); also stores discovery settings under key "discovery"
 - `import_log` - Tracks job import history (sourceType, sourceUrl, status, jobId, jobTitle, jobCompany, errorMessage)
+- `discovery_runs` - Tracks each discovery run (status, jobsFound, jobsImported, jobsDuplicate, jobsFailed, sourcesSearched, timestamps)
+- `discovery_results` - Individual results from discovery runs (jobTitle, jobCompany, source, importResult, isDuplicate, classification, recommendedResume)
 
 ## Pages
 
 1. **Overview** (`/`) - Dashboard with stats cards and recent jobs
-2. **Job Intake** (`/intake`) - Import jobs via URL scraping, email alert parsing, or bulk paste; import history dashboard with stats
-3. **Jobs Inbox** (`/jobs`) - Filterable job table with Quick Add (duplicate detection), priority filter, follow-up dates
-4. **Job Detail** (`/jobs/:id`) - Full job view with status buttons, priority selector, follow-up date, missing info warnings, notes, recommended resume
-5. **Resume Vault** (`/resumes`) - CRUD for master resumes with active/inactive toggle
-6. **Candidate Profile** (`/profile`) - Personal info form and standard application answers
-7. **Tracker** (`/tracker`) - Kanban board (drag-and-drop), Table view, Analytics tab (charts for applications by day/source, interviews by resume type, pipeline summary), CSV export
-8. **Settings** (`/settings`) - Manage role categories, sources, and statuses
+2. **Job Discovery** (`/discovery`) - Automated job search from public sources (Greenhouse, Lever, Google Jobs); configurable target roles, locations, keywords, sources; run/stop controls; results dashboard and history table
+3. **Job Intake** (`/intake`) - Import jobs via URL scraping, email alert parsing, or bulk paste; import history dashboard with stats
+4. **Jobs Inbox** (`/jobs`) - Filterable job table with Quick Add (duplicate detection), priority filter, follow-up dates
+5. **Job Detail** (`/jobs/:id`) - Full job view with status buttons, priority selector, follow-up date, missing info warnings, notes, recommended resume
+6. **Resume Vault** (`/resumes`) - CRUD for master resumes with active/inactive toggle
+7. **Candidate Profile** (`/profile`) - Personal info form and standard application answers
+8. **Tracker** (`/tracker`) - Kanban board (drag-and-drop), Table view, Analytics tab (charts for applications by day/source, interviews by resume type, pipeline summary), CSV export
+9. **Settings** (`/settings`) - Manage role categories, sources, and statuses
+
+## Job Discovery System
+
+Searches public job board APIs:
+- **Greenhouse**: Uses public boards API (`boards-api.greenhouse.io/v1/boards/{company}/jobs`)
+- **Lever**: Uses public postings API (`api.lever.co/v0/postings/{company}`)
+- **Google Jobs**: Scrapes Google search results for structured job data
+
+Configuration stored in settings table under key "discovery":
+- Primary/secondary target roles, preferred locations, work modes
+- Max jobs per scan, search keywords, exclude keywords, job age filter
+- Source toggles (Google Jobs, Greenhouse, Lever, Workday, Company Career Pages, Email Alerts)
+- Scheduler (Manual Only, Daily, Twice Daily)
+
+Discovery runs async in background; frontend polls status. Results feed into existing Job Intake pipeline with duplicate detection.
 
 ## Job Intake System
 
@@ -62,6 +80,13 @@ Simple label-based scoring (Strong Match, Possible Match, Weak Match) based on k
 - `POST /api/intake/email` - Parse email content and import jobs
 - `POST /api/intake/bulk` - Bulk import from URLs or descriptions
 - `GET /api/intake/history` - Get import log history
+- `GET/PUT /api/discovery/settings` - Get/update discovery settings
+- `POST /api/discovery/run` - Start a discovery run
+- `POST /api/discovery/stop` - Stop running discovery
+- `GET /api/discovery/status` - Get current discovery status and latest run
+- `GET /api/discovery/runs` - Get all discovery runs
+- `GET /api/discovery/runs/:id` - Get specific discovery run
+- `GET /api/discovery/results` - Get discovery results (optional ?runId= filter)
 - `GET/POST /api/resumes` - List/create resumes
 - `PATCH /api/resumes/:id` - Update resume
 - `POST /api/resumes/:id/upload` - Upload resume file (PDF/DOCX, multipart form)
@@ -81,6 +106,7 @@ Simple label-based scoring (Strong Match, Possible Match, Weak Match) based on k
 - `server/storage.ts` - Storage interface and database implementation
 - `server/routes.ts` - API endpoints
 - `server/scraper.ts` - URL scraping (cheerio), email parsing, bulk input parsing
+- `server/discovery.ts` - Job discovery engine (Greenhouse, Lever, Google Jobs search)
 - `server/seed.ts` - Sample seed data
 - `client/src/App.tsx` - Main app with routing and sidebar layout
 - `client/src/components/app-sidebar.tsx` - Navigation sidebar

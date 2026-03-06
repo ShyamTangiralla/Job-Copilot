@@ -6,7 +6,10 @@ import {
   type ActivityLog, type InsertActivityLog,
   type Settings, type InsertSettings,
   type ImportLog, type InsertImportLog,
+  type DiscoveryRun, type InsertDiscoveryRun,
+  type DiscoveryResult, type InsertDiscoveryResult,
   candidateProfile, resumes, jobs, applicationAnswers, activityLog, settings, importLog,
+  discoveryRuns, discoveryResults,
   ROLE_TYPES,
 } from "@shared/schema";
 import { db } from "./db";
@@ -41,6 +44,16 @@ export interface IStorage {
 
   createImportLog(data: InsertImportLog): Promise<ImportLog>;
   getImportLogs(): Promise<ImportLog[]>;
+
+  getDiscoverySettings(): Promise<any>;
+  updateDiscoverySettings(data: any): Promise<void>;
+  createDiscoveryRun(data: InsertDiscoveryRun): Promise<DiscoveryRun>;
+  updateDiscoveryRun(id: number, data: Partial<InsertDiscoveryRun>): Promise<DiscoveryRun | undefined>;
+  getDiscoveryRuns(): Promise<DiscoveryRun[]>;
+  getDiscoveryRun(id: number): Promise<DiscoveryRun | undefined>;
+  createDiscoveryResult(data: InsertDiscoveryResult): Promise<DiscoveryResult>;
+  getDiscoveryResults(runId: number): Promise<DiscoveryResult[]>;
+  getRecentDiscoveryResults(): Promise<DiscoveryResult[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -180,6 +193,73 @@ export class DatabaseStorage implements IStorage {
 
   async getImportLogs(): Promise<ImportLog[]> {
     return db.select().from(importLog).orderBy(desc(importLog.createdAt)).limit(100);
+  }
+
+  async getDiscoverySettings(): Promise<any> {
+    const rows = await db.select().from(settings).where(eq(settings.key, "discovery"));
+    if (rows.length === 0) {
+      return {
+        primaryRoles: ["Data Analyst", "Healthcare Data Analyst", "Business Analyst", "Financial Analyst", "BI Analyst"],
+        secondaryRoles: ["Data Engineer", "Data Scientist"],
+        preferredLocations: ["Remote", "New York", "Chicago"],
+        workModes: ["Remote", "Hybrid", "Onsite"],
+        maxJobsPerScan: 25,
+        searchKeywords: ["SQL", "Python", "Tableau", "Power BI", "healthcare analytics"],
+        excludeKeywords: [],
+        jobAgeFilter: "Last 7 days",
+        sources: {
+          googleJobs: true,
+          greenhouse: true,
+          lever: true,
+          workday: false,
+          companyCareerPages: false,
+          emailAlerts: false,
+        },
+        scheduler: "Manual Only",
+      };
+    }
+    return rows[0].value;
+  }
+
+  async updateDiscoverySettings(data: any): Promise<void> {
+    const existing = await db.select().from(settings).where(eq(settings.key, "discovery"));
+    if (existing.length === 0) {
+      await db.insert(settings).values({ key: "discovery", value: data });
+    } else {
+      await db.update(settings).set({ value: data }).where(eq(settings.key, "discovery"));
+    }
+  }
+
+  async createDiscoveryRun(data: InsertDiscoveryRun): Promise<DiscoveryRun> {
+    const [created] = await db.insert(discoveryRuns).values(data).returning();
+    return created;
+  }
+
+  async updateDiscoveryRun(id: number, data: Partial<InsertDiscoveryRun>): Promise<DiscoveryRun | undefined> {
+    const [updated] = await db.update(discoveryRuns).set(data).where(eq(discoveryRuns.id, id)).returning();
+    return updated;
+  }
+
+  async getDiscoveryRuns(): Promise<DiscoveryRun[]> {
+    return db.select().from(discoveryRuns).orderBy(desc(discoveryRuns.startedAt)).limit(20);
+  }
+
+  async getDiscoveryRun(id: number): Promise<DiscoveryRun | undefined> {
+    const rows = await db.select().from(discoveryRuns).where(eq(discoveryRuns.id, id));
+    return rows[0];
+  }
+
+  async createDiscoveryResult(data: InsertDiscoveryResult): Promise<DiscoveryResult> {
+    const [created] = await db.insert(discoveryResults).values(data).returning();
+    return created;
+  }
+
+  async getDiscoveryResults(runId: number): Promise<DiscoveryResult[]> {
+    return db.select().from(discoveryResults).where(eq(discoveryResults.runId, runId)).orderBy(desc(discoveryResults.createdAt));
+  }
+
+  async getRecentDiscoveryResults(): Promise<DiscoveryResult[]> {
+    return db.select().from(discoveryResults).orderBy(desc(discoveryResults.createdAt)).limit(50);
   }
 
   private classifyAndScore(data: InsertJob): InsertJob {

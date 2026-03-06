@@ -14,12 +14,14 @@ import CandidateProfilePage from "@/pages/candidate-profile";
 import Tracker from "@/pages/tracker";
 import SettingsPage from "@/pages/settings";
 import JobIntake from "@/pages/job-intake";
+import JobDiscovery from "@/pages/job-discovery";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Overview} />
       <Route path="/intake" component={JobIntake} />
+      <Route path="/discovery" component={JobDiscovery} />
       <Route path="/jobs" component={JobsInbox} />
       <Route path="/jobs/:id" component={JobDetail} />
       <Route path="/resumes" component={ResumeVault} />
