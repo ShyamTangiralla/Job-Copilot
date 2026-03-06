@@ -53,6 +53,7 @@ export const jobs = pgTable("jobs", {
   roleClassification: text("role_classification").notNull().default("Unknown"),
   resumeRecommendation: text("resume_recommendation").notNull().default(""),
   fitLabel: text("fit_label").notNull().default(""),
+  freshnessLabel: text("freshness_label").notNull().default(""),
   status: text("status").notNull().default("New"),
   priority: text("priority").notNull().default("Medium"),
   notes: text("notes").notNull().default(""),
@@ -141,6 +142,7 @@ export const discoveryResults = pgTable("discovery_results", {
   classification: text("classification").notNull().default(""),
   recommendedResume: text("recommended_resume").notNull().default(""),
   matchScore: text("match_score").notNull().default(""),
+  freshnessLabel: text("freshness_label").notNull().default(""),
   jobId: integer("job_id"),
   errorMessage: text("error_message").notNull().default(""),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -155,3 +157,4 @@ export const ROLE_TYPES = ["Data Analyst", "Healthcare Data Analyst", "Healthcar
 export const FIT_LABELS = ["Strong Match", "Possible Match", "Weak Match"] as const;
 export const WORK_MODES = ["Remote", "Hybrid", "Onsite"] as const;
 export const PRIORITIES = ["High", "Medium", "Low"] as const;
+export const FRESHNESS_LABELS = ["Fresh 24h", "Fresh 48h", "Unknown Date"] as const;

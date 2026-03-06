@@ -1,0 +1,92 @@
+Improve the Job Discovery system so it prioritizes fresh jobs and limits the number of jobs imported per day.
+
+Goal:
+The system should mainly collect jobs posted within the last 24 hours, with a fallback up to 48 hours maximum. Jobs older than 48 hours should not be imported. The system should also limit how many jobs are imported per discovery run so the user can realistically review and apply.
+
+Requirements:
+
+1. Freshness filtering
+- Strongly prefer jobs posted in the last 24 hours
+- Allow fallback jobs posted within the last 48 hours if needed
+- Do not import jobs older than 48 hours
+- If the job posting date is unknown, label it as "Unknown Date" and give it the lowest priority
+
+2. Daily import cap
+Add a setting called "Daily Import Cap".
+
+Default value: 150 jobs
+
+Allow selectable options:
+- 100
+- 150
+- 200
+
+Once the cap is reached during a discovery run, stop importing additional jobs.
+
+3. Freshness labels
+Every discovered job should receive one of these labels:
+- Fresh 24h
+- Fresh 48h
+- Unknown Date
+
+4. Import priority logic
+Highest priority:
+- Jobs posted within the last 24 hours
+- Strong role match with the user's primary roles
+- Preferred location or remote work mode
+- Matching keywords
+
+Second priority:
+- Jobs posted within the last 48 hours
+- Strong or possible role match
+
+Lowest priority:
+- Jobs with unknown posting date
+
+5. Filtering behavior
+Before sending jobs to the Jobs Inbox:
+- Exclude jobs older than 48 hours
+
+Sort discovery results in this order:
+1. Fresh 24h jobs
+2. Strong Match before Possible Match
+3. Primary roles before Secondary roles
+
+6. Job Discovery settings
+Add the following controls to the Job Discovery settings page:
+
+Preferred Freshness:
+- Last 24 hours only
+- Last 24 hours preferred, fallback to 48 hours
+
+Daily Import Cap:
+- 100
+- 150
+- 200
+
+7. Discovery History updates
+Add these columns:
+- Posted Age
+- Freshness Label
+
+8. Jobs Inbox behavior
+Add a filter for Freshness Label.
+
+Default sorting in Jobs Inbox:
+- Fresh 24h first
+- Ready to Apply first
+- Strong Match first
+
+9. Dashboard metrics
+Add new dashboard cards:
+- Fresh 24h Imported
+- Fresh 48h Imported
+- Skipped as Too Old
+
+10. Safety rules
+- Keep human final submit for job applications
+- Do not auto-submit applications
+- Keep duplicate detection
+- Keep role classification
+- Keep resume recommendation
+- Keep fit scoring

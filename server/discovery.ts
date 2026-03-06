@@ -12,6 +12,8 @@ interface DiscoveredJob {
   datePosted: string;
   matchScoreNumeric?: number;
   matchScore?: string;
+  freshnessLabel?: string;
+  isPrimaryRole?: boolean;
 }
 
 interface DiscoveryConfig {
@@ -32,6 +34,8 @@ interface DiscoveryConfig {
     emailAlerts: boolean;
   };
   scheduler: string;
+  preferredFreshness: string;
+  dailyImportCap: number;
 }
 
 let activeRunId: number | null = null;
@@ -46,6 +50,17 @@ export function stopDiscovery(): void {
     abortController.abort();
   }
   activeRunId = null;
+}
+
+function computeFreshnessLabel(datePosted: string): string {
+  if (!datePosted) return "Unknown Date";
+  const posted = new Date(datePosted);
+  if (isNaN(posted.getTime())) return "Unknown Date";
+  const now = new Date();
+  const hoursAgo = (now.getTime() - posted.getTime()) / (1000 * 60 * 60);
+  if (hoursAgo <= 24) return "Fresh 24h";
+  if (hoursAgo <= 48) return "Fresh 48h";
+  return "Too Old";
 }
 
 function detectWorkMode(text: string): string {
@@ -343,17 +358,63 @@ export async function runDiscovery(): Promise<number> {
         });
         discovered.matchScoreNumeric = scored.matchScoreNumeric;
         discovered.matchScore = scored.fitLabel;
+        discovered.freshnessLabel = computeFreshnessLabel(discovered.datePosted);
+        const titleLower = discovered.title.toLowerCase();
+        discovered.isPrimaryRole = config.primaryRoles.some(r => titleLower.includes(r.toLowerCase()));
       }
 
-      allDiscoveredJobs.sort((a, b) => (b.matchScoreNumeric ?? 0) - (a.matchScoreNumeric ?? 0));
+      const skippedOld: DiscoveredJob[] = [];
+      allDiscoveredJobs = allDiscoveredJobs.filter(job => {
+        if (job.freshnessLabel === "Too Old") {
+          skippedOld.push(job);
+          return false;
+        }
+        if (config.preferredFreshness === "Last 24 hours only" && job.freshnessLabel === "Fresh 48h") {
+          skippedOld.push(job);
+          return false;
+        }
+        return true;
+      });
 
-      if (allDiscoveredJobs.length > config.maxJobsPerScan) {
-        allDiscoveredJobs = allDiscoveredJobs.slice(0, config.maxJobsPerScan);
+      const freshnessOrder: Record<string, number> = { "Fresh 24h": 0, "Fresh 48h": 1, "Unknown Date": 2 };
+      const matchOrder: Record<string, number> = { "Strong Match": 0, "Possible Match": 1, "Weak Match": 2 };
+      allDiscoveredJobs.sort((a, b) => {
+        const fa = freshnessOrder[a.freshnessLabel ?? "Unknown Date"] ?? 2;
+        const fb = freshnessOrder[b.freshnessLabel ?? "Unknown Date"] ?? 2;
+        if (fa !== fb) return fa - fb;
+        const ma = matchOrder[a.matchScore ?? "Weak Match"] ?? 2;
+        const mb = matchOrder[b.matchScore ?? "Weak Match"] ?? 2;
+        if (ma !== mb) return ma - mb;
+        const pa = a.isPrimaryRole ? 0 : 1;
+        const pb = b.isPrimaryRole ? 0 : 1;
+        return pa - pb;
+      });
+
+      const importLimit = Math.min(config.maxJobsPerScan, config.dailyImportCap || 150);
+      if (allDiscoveredJobs.length > importLimit) {
+        allDiscoveredJobs = allDiscoveredJobs.slice(0, importLimit);
       }
 
       let imported = 0;
       let duplicates = 0;
       let failed = 0;
+
+      for (const old of skippedOld) {
+        await storage.createDiscoveryResult({
+          runId: run.id,
+          jobTitle: old.title,
+          jobCompany: old.company,
+          source: old.source,
+          location: old.location,
+          applyLink: old.applyLink,
+          importResult: "skipped_old",
+          isDuplicate: false,
+          classification: "",
+          recommendedResume: "",
+          matchScore: old.matchScore ?? "",
+          freshnessLabel: old.freshnessLabel === "Too Old" ? "Too Old" : old.freshnessLabel ?? "",
+        });
+      }
 
       for (const discovered of allDiscoveredJobs) {
         if (signal.aborted) break;
@@ -374,6 +435,7 @@ export async function runDiscovery(): Promise<number> {
               classification: "",
               recommendedResume: "",
               matchScore: discovered.matchScore ?? "",
+              freshnessLabel: discovered.freshnessLabel ?? "",
             });
             continue;
           }
@@ -393,6 +455,7 @@ export async function runDiscovery(): Promise<number> {
             description: discovered.description,
             applyLink: discovered.applyLink,
             status: statusFromScore,
+            freshnessLabel: discovered.freshnessLabel === "Too Old" ? "Unknown Date" : discovered.freshnessLabel ?? "Unknown Date",
           });
 
           imported++;
@@ -408,6 +471,7 @@ export async function runDiscovery(): Promise<number> {
             classification: job.roleClassification,
             recommendedResume: job.resumeRecommendation,
             matchScore: discovered.matchScore ?? "",
+            freshnessLabel: discovered.freshnessLabel ?? "",
             jobId: job.id,
           });
 
@@ -431,6 +495,7 @@ export async function runDiscovery(): Promise<number> {
             importResult: "failed",
             isDuplicate: false,
             matchScore: discovered.matchScore ?? "",
+            freshnessLabel: discovered.freshnessLabel ?? "",
             errorMessage: err.message || "Unknown error",
           });
         }

@@ -22,6 +22,8 @@ interface DiscoverySettings {
   searchKeywords: string[];
   excludeKeywords: string[];
   jobAgeFilter: string;
+  preferredFreshness: string;
+  dailyImportCap: number;
   sources: {
     googleJobs: boolean;
     greenhouse: boolean;
@@ -253,6 +255,34 @@ export default function JobDiscovery() {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Preferred Freshness</Label>
+                    <Select value={local.preferredFreshness} onValueChange={(v) => update({ preferredFreshness: v })}>
+                      <SelectTrigger data-testid="select-preferred-freshness" className="h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Last 24 hours preferred, fallback to 48 hours">24h preferred, 48h fallback</SelectItem>
+                        <SelectItem value="Last 24 hours only">Last 24 hours only</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Daily Import Cap</Label>
+                    <Select value={String(local.dailyImportCap)} onValueChange={(v) => update({ dailyImportCap: parseInt(v) })}>
+                      <SelectTrigger data-testid="select-daily-import-cap" className="h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="100">100</SelectItem>
+                        <SelectItem value="150">150</SelectItem>
+                        <SelectItem value="200">200</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <Label className="text-sm">Discovery Sources</Label>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -309,7 +339,7 @@ export default function JobDiscovery() {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card>
           <CardContent className="pt-4 pb-3 px-4">
             <div className="text-2xl font-bold" data-testid="stat-found">{latestRun?.jobsFound ?? 0}</div>
@@ -332,6 +362,42 @@ export default function JobDiscovery() {
           <CardContent className="pt-4 pb-3 px-4">
             <div className="text-2xl font-bold text-red-600" data-testid="stat-failed">{latestRun?.jobsFailed ?? 0}</div>
             <div className="text-xs text-muted-foreground">Failed</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-green-600" />
+              <div className="text-2xl font-bold text-green-600" data-testid="stat-fresh-24h-imported">
+                {results.filter((r) => r.freshnessLabel === "Fresh 24h" && r.importResult === "imported").length}
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground">Fresh 24h Imported</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-blue-600" />
+              <div className="text-2xl font-bold text-blue-600" data-testid="stat-fresh-48h-imported">
+                {results.filter((r) => r.freshnessLabel === "Fresh 48h" && r.importResult === "imported").length}
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground">Fresh 48h Imported</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-orange-600" />
+              <div className="text-2xl font-bold text-orange-600" data-testid="stat-skipped-old">
+                {results.filter((r) => r.importResult === "skipped_old").length}
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground">Skipped as Too Old</div>
           </CardContent>
         </Card>
         <Card>
@@ -364,6 +430,8 @@ export default function JobDiscovery() {
                     <th className="pb-2 font-medium">Company</th>
                     <th className="pb-2 font-medium">Source</th>
                     <th className="pb-2 font-medium">Match Score</th>
+                    <th className="pb-2 font-medium">Freshness</th>
+                    <th className="pb-2 font-medium">Posted Age</th>
                     <th className="pb-2 font-medium">Date Found</th>
                     <th className="pb-2 font-medium">Result</th>
                     <th className="pb-2 font-medium">Duplicate</th>
@@ -386,6 +454,26 @@ export default function JobDiscovery() {
                             {r.matchScore === "Strong Match" ? "Strong" : r.matchScore === "Possible Match" ? "Possible" : "Weak"}
                           </Badge>
                         ) : "—"}
+                      </td>
+                      <td className="py-2 pr-2" data-testid={`freshness-${r.id}`}>
+                        {r.freshnessLabel ? (
+                          <Badge
+                            variant={r.freshnessLabel === "Fresh 24h" ? "default" : r.freshnessLabel === "Fresh 48h" ? "secondary" : "outline"}
+                          >
+                            <Clock className="h-3 w-3 mr-1" />
+                            {r.freshnessLabel}
+                          </Badge>
+                        ) : "—"}
+                      </td>
+                      <td className="py-2 pr-2 text-xs text-muted-foreground" data-testid={`posted-age-${r.id}`}>
+                        {(() => {
+                          if (!r.createdAt) return "—";
+                          const hoursAgo = Math.floor((Date.now() - new Date(r.createdAt).getTime()) / (1000 * 60 * 60));
+                          if (hoursAgo < 1) return "Just now";
+                          if (hoursAgo < 24) return `${hoursAgo}h ago`;
+                          const daysAgo = Math.floor(hoursAgo / 24);
+                          return `${daysAgo}d ago`;
+                        })()}
                       </td>
                       <td className="py-2 pr-2 text-xs text-muted-foreground">{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}</td>
                       <td className="py-2 pr-2"><ResultsBadge result={r.importResult} /></td>

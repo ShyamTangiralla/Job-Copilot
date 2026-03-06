@@ -79,8 +79,25 @@ Multi-factor scoring system evaluates discovered jobs across 5 dimensions:
 Score categories: Strong Match (≥40), Possible Match (≥20), Weak Match (<20)
 
 Status assignment from discovery: Strong → "Ready to Apply", Possible → "New", Weak → "Skipped"
-Jobs Inbox sorts by Strong Match first.
-Discovery History table includes "Match Score" column showing Strong/Possible/Weak badges.
+
+## Freshness Filtering
+
+Discovery system prioritizes fresh jobs:
+- **Fresh 24h**: Posted within last 24 hours (highest priority)
+- **Fresh 48h**: Posted within last 48 hours (fallback)
+- **Unknown Date**: No valid posting date (lowest priority)
+- **Too Old**: >48 hours, excluded from import
+
+Discovery settings include:
+- `preferredFreshness`: "Last 24 hours only" or "Last 24 hours preferred, fallback to 48 hours"
+- `dailyImportCap`: 100, 150, or 200 (default 150)
+
+Sort order: Fresh 24h → Fresh 48h → Unknown Date, then Strong Match → Possible → Weak, then primary roles → secondary.
+
+Jobs Inbox sorts by: Freshness → Ready to Apply status → Strong Match first.
+Jobs have `freshnessLabel` column. Discovery results have `freshnessLabel` column.
+Discovery History shows Freshness and Match Score columns.
+Overview dashboard shows Fresh 24h and Fresh 48h stat cards.
 
 ## API Endpoints
 

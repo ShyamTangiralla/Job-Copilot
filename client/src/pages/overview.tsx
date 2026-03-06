@@ -11,6 +11,8 @@ import {
   XCircle,
   TrendingUp,
   FileText,
+  Clock,
+  Timer,
 } from "lucide-react";
 import type { Job, Resume } from "@shared/schema";
 
@@ -36,6 +38,8 @@ export default function Overview() {
     interviews: jobs?.filter((j) => j.status === "Interview").length ?? 0,
     rejected: jobs?.filter((j) => j.status === "Rejected").length ?? 0,
     activeResumes: resumes?.filter((r) => r.active).length ?? 0,
+    fresh24h: jobs?.filter((j) => j.freshnessLabel === "Fresh 24h").length ?? 0,
+    fresh48h: jobs?.filter((j) => j.freshnessLabel === "Fresh 48h").length ?? 0,
   };
 
   const recentJobs = jobs?.slice(0, 5) ?? [];
@@ -43,6 +47,8 @@ export default function Overview() {
   const statCards = [
     { label: "Total Jobs", value: stats.total, icon: Inbox, color: "text-blue-600 dark:text-blue-400" },
     { label: "New", value: stats.newJobs, icon: TrendingUp, color: "text-emerald-600 dark:text-emerald-400" },
+    { label: "Fresh 24h", value: stats.fresh24h, icon: Clock, color: "text-green-600 dark:text-green-400" },
+    { label: "Fresh 48h", value: stats.fresh48h, icon: Timer, color: "text-teal-600 dark:text-teal-400" },
     { label: "Reviewed", value: stats.reviewed, icon: CheckCircle, color: "text-amber-600 dark:text-amber-400" },
     { label: "Applied", value: stats.applied, icon: Send, color: "text-violet-600 dark:text-violet-400" },
     { label: "Interviews", value: stats.interviews, icon: MessageSquare, color: "text-cyan-600 dark:text-cyan-400" },
@@ -70,7 +76,7 @@ export default function Overview() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {isLoading
-          ? Array.from({ length: 8 }).map((_, i) => (
+          ? Array.from({ length: 10 }).map((_, i) => (
               <Card key={i}>
                 <CardContent className="p-4">
                   <Skeleton className="h-4 w-20 mb-2" />

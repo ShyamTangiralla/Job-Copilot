@@ -45,7 +45,7 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Job, Resume } from "@shared/schema";
-import { JOB_STATUSES, WORK_MODES, PRIORITIES } from "@shared/schema";
+import { JOB_STATUSES, WORK_MODES, PRIORITIES, FRESHNESS_LABELS } from "@shared/schema";
 
 interface SettingsData {
   roleCategories: string[];
@@ -62,6 +62,7 @@ export default function JobsInbox() {
   const [filterWorkMode, setFilterWorkMode] = useState("all");
   const [filterSource, setFilterSource] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
+  const [filterFreshness, setFilterFreshness] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState<Job | null>(null);
@@ -131,9 +132,16 @@ export default function JobsInbox() {
     if (filterWorkMode !== "all" && job.workMode !== filterWorkMode) return false;
     if (filterSource !== "all" && job.source !== filterSource) return false;
     if (filterPriority !== "all" && job.priority !== filterPriority) return false;
+    if (filterFreshness !== "all" && job.freshnessLabel !== filterFreshness) return false;
     return true;
   }).sort((a, b) => {
+    const freshnessOrder: Record<string, number> = { "Fresh 24h": 0, "Fresh 48h": 1, "Unknown Date": 2, "": 3 };
+    const statusOrder: Record<string, number> = { "Ready to Apply": 0 };
     const fitOrder: Record<string, number> = { "Strong Match": 0, "Possible Match": 1, "Weak Match": 2, "": 3 };
+    const freshDiff = (freshnessOrder[a.freshnessLabel] ?? 3) - (freshnessOrder[b.freshnessLabel] ?? 3);
+    if (freshDiff !== 0) return freshDiff;
+    const statusDiff = (statusOrder[a.status] ?? 1) - (statusOrder[b.status] ?? 1);
+    if (statusDiff !== 0) return statusDiff;
     return (fitOrder[a.fitLabel] ?? 3) - (fitOrder[b.fitLabel] ?? 3);
   });
 
@@ -177,7 +185,13 @@ export default function JobsInbox() {
     });
   };
 
-  const activeFilterCount = [filterRole, filterStatus, filterWorkMode, filterSource, filterPriority].filter((f) => f !== "all").length;
+  const freshnessColor: Record<string, string> = {
+    "Fresh 24h": "default",
+    "Fresh 48h": "secondary",
+    "Unknown Date": "outline",
+  };
+
+  const activeFilterCount = [filterRole, filterStatus, filterWorkMode, filterSource, filterPriority, filterFreshness].filter((f) => f !== "all").length;
 
   return (
     <div className="p-6 space-y-4 max-w-7xl mx-auto">
@@ -399,6 +413,18 @@ export default function JobsInbox() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1 min-w-[140px]">
+                <Label className="text-xs">Freshness</Label>
+                <Select value={filterFreshness} onValueChange={setFilterFreshness}>
+                  <SelectTrigger data-testid="select-filter-freshness"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Freshness</SelectItem>
+                    {FRESHNESS_LABELS.map((f) => (
+                      <SelectItem key={f} value={f}>{f}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               {sources.length > 0 && (
                 <div className="space-y-1 min-w-[140px]">
                   <Label className="text-xs">Source</Label>
@@ -417,7 +443,7 @@ export default function JobsInbox() {
                 variant="secondary"
                 size="sm"
                 className="mt-5"
-                onClick={() => { setFilterRole("all"); setFilterStatus("all"); setFilterWorkMode("all"); setFilterSource("all"); setFilterPriority("all"); }}
+                onClick={() => { setFilterRole("all"); setFilterStatus("all"); setFilterWorkMode("all"); setFilterSource("all"); setFilterPriority("all"); setFilterFreshness("all"); }}
                 data-testid="button-clear-filters"
               >
                 <X className="h-3 w-3 mr-1" />
@@ -454,6 +480,7 @@ export default function JobsInbox() {
                     <TableHead>Priority</TableHead>
                     <TableHead>Classification</TableHead>
                     <TableHead>Recommended Resume</TableHead>
+                    <TableHead>Freshness</TableHead>
                     <TableHead>Fit</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
@@ -498,6 +525,13 @@ export default function JobsInbox() {
                             <span className="text-xs text-muted-foreground">—</span>
                           );
                         })()}
+                      </TableCell>
+                      <TableCell>
+                        {job.freshnessLabel && (
+                          <Badge variant={freshnessColor[job.freshnessLabel] as any ?? "secondary"} className="text-xs" data-testid={`badge-freshness-${job.id}`}>
+                            {job.freshnessLabel}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell>
                         {job.fitLabel && (

@@ -216,9 +216,14 @@ export class DatabaseStorage implements IStorage {
           emailAlerts: false,
         },
         scheduler: "Manual Only",
+        preferredFreshness: "Last 24 hours preferred, fallback to 48 hours",
+        dailyImportCap: 150,
       };
     }
-    return rows[0].value;
+    const val = rows[0].value as any;
+    if (!val.preferredFreshness) val.preferredFreshness = "Last 24 hours preferred, fallback to 48 hours";
+    if (!val.dailyImportCap) val.dailyImportCap = 150;
+    return val;
   }
 
   async updateDiscoverySettings(data: any): Promise<void> {
