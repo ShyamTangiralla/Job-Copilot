@@ -45,7 +45,13 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Job } from "@shared/schema";
-import { JOB_STATUSES, ROLE_TYPES, WORK_MODES, PRIORITIES } from "@shared/schema";
+import { JOB_STATUSES, WORK_MODES, PRIORITIES } from "@shared/schema";
+
+interface SettingsData {
+  roleCategories: string[];
+  sources: string[];
+  statuses: string[];
+}
 
 export default function JobsInbox() {
   const { toast } = useToast();
@@ -63,6 +69,12 @@ export default function JobsInbox() {
   const { data: jobs, isLoading } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
   });
+
+  const { data: settings } = useQuery<SettingsData>({
+    queryKey: ["/api/settings"],
+  });
+
+  const roleTypes = settings?.roleCategories ?? [];
 
   const createJob = useMutation({
     mutationFn: async (data: any) => {
@@ -332,7 +344,7 @@ export default function JobsInbox() {
                   <SelectTrigger data-testid="select-filter-role"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Roles</SelectItem>
-                    {ROLE_TYPES.map((r) => (
+                    {roleTypes.map((r) => (
                       <SelectItem key={r} value={r}>{r}</SelectItem>
                     ))}
                   </SelectContent>

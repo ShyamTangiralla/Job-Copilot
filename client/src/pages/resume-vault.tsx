@@ -16,22 +16,51 @@ import {
   DialogTrigger,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Plus, FileText, Pencil, Trash2, Clock, Upload, Eye, Download, File, X } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Resume } from "@shared/schema";
-import { ROLE_TYPES } from "@shared/schema";
+
+interface SettingsData {
+  roleCategories: string[];
+  sources: string[];
+  statuses: string[];
+}
 
 export default function ResumeVault() {
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingResume, setEditingResume] = useState<Resume | null>(null);
   const [uploadingId, setUploadingId] = useState<number | null>(null);
+  const [selectedRole, setSelectedRole] = useState("");
+  const [showNewRole, setShowNewRole] = useState(false);
+  const [newRoleName, setNewRoleName] = useState("");
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   const { data: resumes, isLoading } = useQuery<Resume[]>({
     queryKey: ["/api/resumes"],
+  });
+
+  const { data: settings } = useQuery<SettingsData>({
+    queryKey: ["/api/settings"],
+  });
+
+  const roleTypes = settings?.roleCategories ?? [];
+
+  const addRoleType = useMutation({
+    mutationFn: async (name: string) => {
+      if (!settings) throw new Error("Settings not loaded");
+      const updated = { ...settings, roleCategories: [...settings.roleCategories, name] };
+      const res = await apiRequest("PUT", "/api/settings", updated);
+      return res.json();
+    },
+    onSuccess: (_data, name) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      setSelectedRole(name);
+      setNewRoleName("");
+      setShowNewRole(false);
+      toast({ title: "Role type added" });
+    },
   });
 
   const createResume = useMutation({
@@ -121,9 +150,14 @@ export default function ResumeVault() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const roleType = selectedRole || roleTypes[0];
+    if (!roleType) {
+      toast({ title: "Please select a role type", variant: "destructive" });
+      return;
+    }
     const data = {
       name: fd.get("name") as string,
-      roleType: fd.get("roleType") as string,
+      roleType,
       plainText: fd.get("plainText") as string,
       active: true,
     };
@@ -152,12 +186,30 @@ export default function ResumeVault() {
 
   const openEdit = (resume: Resume) => {
     setEditingResume(resume);
+    setSelectedRole(resume.roleType);
+    setShowNewRole(false);
+    setNewRoleName("");
     setDialogOpen(true);
   };
 
   const openNew = () => {
     setEditingResume(null);
+    setSelectedRole(roleTypes[0] ?? "");
+    setShowNewRole(false);
+    setNewRoleName("");
     setDialogOpen(true);
+  };
+
+  const handleAddNewRole = () => {
+    const trimmed = newRoleName.trim();
+    if (!trimmed) return;
+    if (roleTypes.includes(trimmed)) {
+      setSelectedRole(trimmed);
+      setShowNewRole(false);
+      setNewRoleName("");
+      return;
+    }
+    addRoleType.mutate(trimmed);
   };
 
   const getFileExtBadge = (fileType: string) => {
@@ -175,7 +227,7 @@ export default function ResumeVault() {
             Manage your master resumes for different role types. Upload files and maintain plain text for matching.
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setEditingResume(null); }}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) { setEditingResume(null); setShowNewRole(false); } }}>
           <DialogTrigger asChild>
             <Button onClick={openNew} data-testid="button-add-resume">
               <Plus className="h-4 w-4 mr-1" />
@@ -201,18 +253,70 @@ export default function ResumeVault() {
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="roleType">Role Type *</Label>
-                <select
-                  name="roleType"
-                  id="roleType"
-                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-                  defaultValue={editingResume?.roleType ?? ROLE_TYPES[0]}
-                  data-testid="select-resume-role"
-                >
-                  {ROLE_TYPES.filter((r) => r !== "Unknown").map((r) => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
+                <Label>Role Type *</Label>
+                {!showNewRole ? (
+                  <div className="flex items-center gap-2">
+                    <select
+                      className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm"
+                      value={selectedRole}
+                      onChange={(e) => setSelectedRole(e.target.value)}
+                      disabled={roleTypes.length === 0}
+                      data-testid="select-resume-role"
+                    >
+                      {roleTypes.length === 0 && (
+                        <option value="">Loading role types...</option>
+                      )}
+                      {roleTypes.map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                      {editingResume && !roleTypes.includes(editingResume.roleType) && (
+                        <option value={editingResume.roleType}>{editingResume.roleType}</option>
+                      )}
+                    </select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowNewRole(true)}
+                      data-testid="button-add-new-role-type"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Add New Role Type
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={newRoleName}
+                        onChange={(e) => setNewRoleName(e.target.value)}
+                        placeholder="e.g. Data Engineer, BI Analyst..."
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddNewRole(); } }}
+                        autoFocus
+                        data-testid="input-new-role-type"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleAddNewRole}
+                        disabled={!newRoleName.trim() || addRoleType.isPending}
+                        data-testid="button-save-new-role-type"
+                      >
+                        {addRoleType.isPending ? "Saving..." : "Save"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => { setShowNewRole(false); setNewRoleName(""); }}
+                        data-testid="button-cancel-new-role-type"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Enter a name and click Save. It will be available for all future resumes.</p>
+                  </div>
+                )}
               </div>
               <div className="space-y-1">
                 <Label htmlFor="plainText">Plain Text Resume Content</Label>
@@ -266,7 +370,7 @@ export default function ResumeVault() {
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <div className="min-w-0">
                     <h3 className="font-medium truncate" data-testid={`text-resume-name-${resume.id}`}>{resume.name}</h3>
-                    <Badge variant="secondary" className="text-xs mt-1">{resume.roleType}</Badge>
+                    <Badge variant="secondary" className="text-xs mt-1" data-testid={`badge-role-type-${resume.id}`}>{resume.roleType}</Badge>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <Switch
