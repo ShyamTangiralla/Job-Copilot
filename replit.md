@@ -141,6 +141,35 @@ Overview dashboard shows Fresh 24h and Fresh 48h stat cards.
 - `client/src/components/app-sidebar.tsx` - Navigation sidebar
 - `client/src/pages/` - All page components
 
+## Apply Priority Score
+
+Composite 0-100 score per job ranking which jobs to apply to first. Computed from 7 weighted factors:
+1. **Role Match** (max 25pts): Primary roles = 25, secondary = 12
+2. **Freshness** (max 20pts): Fresh 24h = 20, Fresh 48h = 12, Unknown = 5
+3. **Experience Level** (max 15pts): Entry/analyst = 15, mid = 8, senior = 0
+4. **Keyword Match** (max 15pts): SQL, Python, Tableau, Power BI, Excel, dashboards, reporting, analytics, healthcare analytics, business intelligence, ETL, data visualization (~1.25pt each)
+5. **Location & Work Mode** (max 15pts): Remote = 10, Hybrid = 8, preferred location bonus = 5
+6. **Resume Match** (max 5pts): Has resume recommendation = 5
+7. **Source Quality** (max 5pts): Greenhouse/Lever/Workday = 5, generic = 1
+
+Priority labels: ≥90 "Apply Immediately", ≥75 "High Priority", ≥60 "Medium Priority", <60 "Low Priority"
+
+Auto-status: Score ≥90 → "Ready to Apply" from discovery. Does NOT auto-submit applications.
+
+Scoring weights adjustable in Settings page under "Apply Priority Scoring Weights". Stored in settings table under key "scoringWeights".
+
+Recalculate all scores via Settings → "Recalculate All Scores" button, or `POST /api/jobs/recalculate-scores`.
+
+New fields on jobs: `applyPriorityScore`, `applyPriorityLabel`, `applyPriorityExplanation`
+New fields on discovery_results: `applyPriorityScore`, `applyPriorityLabel`
+
+Displayed on: Jobs Inbox (columns + filters), Job Detail (card with progress bar + explanation), Discovery History (columns), Tracker (badges), Overview (4 dashboard cards).
+
+## API Endpoints (new)
+
+- `POST /api/jobs/recalculate-scores` - Recalculate all job priority scores
+- `GET/PUT /api/scoring-weights` - Get/update scoring weight settings
+
 ## Constants
 
-Exported from `shared/schema.ts`: JOB_STATUSES, ROLE_TYPES, FIT_LABELS, WORK_MODES, PRIORITIES
+Exported from `shared/schema.ts`: JOB_STATUSES, ROLE_TYPES, FIT_LABELS, WORK_MODES, PRIORITIES, APPLY_PRIORITY_LABELS

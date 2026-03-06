@@ -45,7 +45,7 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Job, Resume } from "@shared/schema";
-import { JOB_STATUSES, WORK_MODES, PRIORITIES, FRESHNESS_LABELS } from "@shared/schema";
+import { JOB_STATUSES, WORK_MODES, PRIORITIES, FRESHNESS_LABELS, APPLY_PRIORITY_LABELS } from "@shared/schema";
 
 interface SettingsData {
   roleCategories: string[];
@@ -63,6 +63,8 @@ export default function JobsInbox() {
   const [filterSource, setFilterSource] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
   const [filterFreshness, setFilterFreshness] = useState("all");
+  const [filterApplyPriority, setFilterApplyPriority] = useState("all");
+  const [filterMinScore, setFilterMinScore] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState<Job | null>(null);
@@ -133,16 +135,20 @@ export default function JobsInbox() {
     if (filterSource !== "all" && job.source !== filterSource) return false;
     if (filterPriority !== "all" && job.priority !== filterPriority) return false;
     if (filterFreshness !== "all" && job.freshnessLabel !== filterFreshness) return false;
+    if (filterApplyPriority !== "all" && job.applyPriorityLabel !== filterApplyPriority) return false;
+    if (filterMinScore !== "all" && job.applyPriorityScore < parseInt(filterMinScore)) return false;
     return true;
   }).sort((a, b) => {
+    const scoreDiff = (b.applyPriorityScore ?? 0) - (a.applyPriorityScore ?? 0);
+    if (scoreDiff !== 0) return scoreDiff;
     const freshnessOrder: Record<string, number> = { "Fresh 24h": 0, "Fresh 48h": 1, "Unknown Date": 2, "": 3 };
-    const statusOrder: Record<string, number> = { "Ready to Apply": 0 };
-    const fitOrder: Record<string, number> = { "Strong Match": 0, "Possible Match": 1, "Weak Match": 2, "": 3 };
     const freshDiff = (freshnessOrder[a.freshnessLabel] ?? 3) - (freshnessOrder[b.freshnessLabel] ?? 3);
     if (freshDiff !== 0) return freshDiff;
-    const statusDiff = (statusOrder[a.status] ?? 1) - (statusOrder[b.status] ?? 1);
-    if (statusDiff !== 0) return statusDiff;
-    return (fitOrder[a.fitLabel] ?? 3) - (fitOrder[b.fitLabel] ?? 3);
+    const fitOrder: Record<string, number> = { "Strong Match": 0, "Possible Match": 1, "Weak Match": 2, "": 3 };
+    const fitDiff = (fitOrder[a.fitLabel] ?? 3) - (fitOrder[b.fitLabel] ?? 3);
+    if (fitDiff !== 0) return fitDiff;
+    const statusOrder: Record<string, number> = { "Ready to Apply": 0 };
+    return (statusOrder[a.status] ?? 1) - (statusOrder[b.status] ?? 1);
   });
 
   const fitColor: Record<string, string> = {
@@ -191,7 +197,14 @@ export default function JobsInbox() {
     "Unknown Date": "outline",
   };
 
-  const activeFilterCount = [filterRole, filterStatus, filterWorkMode, filterSource, filterPriority, filterFreshness].filter((f) => f !== "all").length;
+  const applyPriorityColor: Record<string, string> = {
+    "Apply Immediately": "default",
+    "High Priority": "default",
+    "Medium Priority": "secondary",
+    "Low Priority": "outline",
+  };
+
+  const activeFilterCount = [filterRole, filterStatus, filterWorkMode, filterSource, filterPriority, filterFreshness, filterApplyPriority, filterMinScore].filter((f) => f !== "all").length;
 
   return (
     <div className="p-6 space-y-4 max-w-7xl mx-auto">
@@ -425,6 +438,31 @@ export default function JobsInbox() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1 min-w-[140px]">
+                <Label className="text-xs">Apply Priority</Label>
+                <Select value={filterApplyPriority} onValueChange={setFilterApplyPriority}>
+                  <SelectTrigger data-testid="select-filter-apply-priority"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Priorities</SelectItem>
+                    {APPLY_PRIORITY_LABELS.map((l) => (
+                      <SelectItem key={l} value={l}>{l}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1 min-w-[140px]">
+                <Label className="text-xs">Min Apply Score</Label>
+                <Select value={filterMinScore} onValueChange={setFilterMinScore}>
+                  <SelectTrigger data-testid="select-filter-min-score"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Any Score</SelectItem>
+                    <SelectItem value="90">90+</SelectItem>
+                    <SelectItem value="75">75+</SelectItem>
+                    <SelectItem value="60">60+</SelectItem>
+                    <SelectItem value="40">40+</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               {sources.length > 0 && (
                 <div className="space-y-1 min-w-[140px]">
                   <Label className="text-xs">Source</Label>
@@ -443,7 +481,7 @@ export default function JobsInbox() {
                 variant="secondary"
                 size="sm"
                 className="mt-5"
-                onClick={() => { setFilterRole("all"); setFilterStatus("all"); setFilterWorkMode("all"); setFilterSource("all"); setFilterPriority("all"); setFilterFreshness("all"); }}
+                onClick={() => { setFilterRole("all"); setFilterStatus("all"); setFilterWorkMode("all"); setFilterSource("all"); setFilterPriority("all"); setFilterFreshness("all"); setFilterApplyPriority("all"); setFilterMinScore("all"); }}
                 data-testid="button-clear-filters"
               >
                 <X className="h-3 w-3 mr-1" />
@@ -480,6 +518,8 @@ export default function JobsInbox() {
                     <TableHead>Priority</TableHead>
                     <TableHead>Classification</TableHead>
                     <TableHead>Recommended Resume</TableHead>
+                    <TableHead>Apply Score</TableHead>
+                    <TableHead>Apply Priority</TableHead>
                     <TableHead>Freshness</TableHead>
                     <TableHead>Fit</TableHead>
                     <TableHead>Status</TableHead>
@@ -525,6 +565,18 @@ export default function JobsInbox() {
                             <span className="text-xs text-muted-foreground">—</span>
                           );
                         })()}
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-medium text-sm" data-testid={`text-apply-score-${job.id}`}>
+                          {job.applyPriorityScore}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {job.applyPriorityLabel && (
+                          <Badge variant={applyPriorityColor[job.applyPriorityLabel] as any ?? "secondary"} className="text-xs" data-testid={`badge-apply-priority-${job.id}`}>
+                            {job.applyPriorityLabel}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell>
                         {job.freshnessLabel && (

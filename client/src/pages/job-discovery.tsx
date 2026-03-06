@@ -430,6 +430,8 @@ export default function JobDiscovery() {
                     <th className="pb-2 font-medium">Company</th>
                     <th className="pb-2 font-medium">Source</th>
                     <th className="pb-2 font-medium">Match Score</th>
+                    <th className="pb-2 font-medium">Apply Score</th>
+                    <th className="pb-2 font-medium">Apply Priority</th>
                     <th className="pb-2 font-medium">Freshness</th>
                     <th className="pb-2 font-medium">Posted Age</th>
                     <th className="pb-2 font-medium">Date Found</th>
@@ -452,6 +454,20 @@ export default function JobDiscovery() {
                             variant={r.matchScore === "Strong Match" ? "default" : r.matchScore === "Possible Match" ? "secondary" : "outline"}
                           >
                             {r.matchScore === "Strong Match" ? "Strong" : r.matchScore === "Possible Match" ? "Possible" : "Weak"}
+                          </Badge>
+                        ) : "—"}
+                      </td>
+                      <td className="py-2 pr-2" data-testid={`apply-score-${r.id}`}>
+                        {r.applyPriorityScore > 0 ? (
+                          <span className="text-sm font-medium">{r.applyPriorityScore}</span>
+                        ) : "—"}
+                      </td>
+                      <td className="py-2 pr-2" data-testid={`apply-priority-${r.id}`}>
+                        {r.applyPriorityLabel ? (
+                          <Badge
+                            variant={r.applyPriorityLabel === "Apply Immediately" ? "default" : r.applyPriorityLabel === "High Priority" ? "default" : r.applyPriorityLabel === "Medium Priority" ? "secondary" : "outline"}
+                          >
+                            {r.applyPriorityLabel}
                           </Badge>
                         ) : "—"}
                       </td>

@@ -54,6 +54,9 @@ export const jobs = pgTable("jobs", {
   resumeRecommendation: text("resume_recommendation").notNull().default(""),
   fitLabel: text("fit_label").notNull().default(""),
   freshnessLabel: text("freshness_label").notNull().default(""),
+  applyPriorityScore: integer("apply_priority_score").notNull().default(0),
+  applyPriorityLabel: text("apply_priority_label").notNull().default(""),
+  applyPriorityExplanation: text("apply_priority_explanation").notNull().default(""),
   status: text("status").notNull().default("New"),
   priority: text("priority").notNull().default("Medium"),
   notes: text("notes").notNull().default(""),
@@ -143,6 +146,8 @@ export const discoveryResults = pgTable("discovery_results", {
   recommendedResume: text("recommended_resume").notNull().default(""),
   matchScore: text("match_score").notNull().default(""),
   freshnessLabel: text("freshness_label").notNull().default(""),
+  applyPriorityScore: integer("apply_priority_score").notNull().default(0),
+  applyPriorityLabel: text("apply_priority_label").notNull().default(""),
   jobId: integer("job_id"),
   errorMessage: text("error_message").notNull().default(""),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -158,3 +163,4 @@ export const FIT_LABELS = ["Strong Match", "Possible Match", "Weak Match"] as co
 export const WORK_MODES = ["Remote", "Hybrid", "Onsite"] as const;
 export const PRIORITIES = ["High", "Medium", "Low"] as const;
 export const FRESHNESS_LABELS = ["Fresh 24h", "Fresh 48h", "Unknown Date"] as const;
+export const APPLY_PRIORITY_LABELS = ["Apply Immediately", "High Priority", "Medium Priority", "Low Priority"] as const;

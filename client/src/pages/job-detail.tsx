@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
 import {
   ArrowLeft,
   ExternalLink,
@@ -31,6 +32,7 @@ import {
   AlertTriangle,
   Clock,
   Flag,
+  Target,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -202,6 +204,14 @@ export default function JobDetail() {
             {job.fitLabel}
           </Badge>
         )}
+        {job.applyPriorityLabel && (
+          <Badge
+            variant={job.applyPriorityLabel === "Apply Immediately" ? "default" : "secondary"}
+            data-testid="badge-apply-priority-label"
+          >
+            {job.applyPriorityLabel}
+          </Badge>
+        )}
         {job.resumeRecommendation && (
           <span className="text-sm text-muted-foreground flex items-center gap-1">
             <FileText className="h-3.5 w-3.5" />
@@ -312,6 +322,49 @@ export default function JobDetail() {
         </div>
 
         <div className="space-y-4">
+          {(job.applyPriorityScore > 0 || job.applyPriorityLabel) && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-medium flex items-center gap-1.5">
+                  <Target className="h-4 w-4" />
+                  Apply Priority Score
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className="text-2xl font-semibold"
+                    data-testid="text-apply-priority-score"
+                  >
+                    {job.applyPriorityScore}
+                  </span>
+                  <span className="text-sm text-muted-foreground">/ 100</span>
+                </div>
+                <Progress
+                  value={job.applyPriorityScore}
+                  className="h-2"
+                  data-testid="progress-apply-priority"
+                />
+                {job.applyPriorityLabel && (
+                  <Badge
+                    variant={job.applyPriorityLabel === "Apply Immediately" ? "default" : "secondary"}
+                    data-testid="badge-apply-priority-card"
+                  >
+                    {job.applyPriorityLabel}
+                  </Badge>
+                )}
+                {job.applyPriorityExplanation && (
+                  <p
+                    className="text-sm text-muted-foreground leading-relaxed"
+                    data-testid="text-apply-priority-explanation"
+                  >
+                    {job.applyPriorityExplanation}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {recommendedResume && (
             <Card>
               <CardHeader className="pb-2">

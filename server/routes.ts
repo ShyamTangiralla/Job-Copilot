@@ -609,6 +609,15 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/jobs/recalculate-scores", async (_req, res) => {
+    try {
+      const count = await storage.recalculateAllPriorityScores();
+      res.json({ message: `Recalculated scores for ${count} jobs`, count });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   app.get("/api/discovery/settings", async (_req, res) => {
     try {
       const s = await storage.getDiscoverySettings();
@@ -623,6 +632,25 @@ export async function registerRoutes(
       await storage.updateDiscoverySettings(req.body);
       const s = await storage.getDiscoverySettings();
       res.json(s);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/scoring-weights", async (_req, res) => {
+    try {
+      const weights = await storage.getScoringWeights();
+      res.json(weights);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/scoring-weights", async (req, res) => {
+    try {
+      await storage.updateScoringWeights(req.body);
+      const weights = await storage.getScoringWeights();
+      res.json(weights);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
     }

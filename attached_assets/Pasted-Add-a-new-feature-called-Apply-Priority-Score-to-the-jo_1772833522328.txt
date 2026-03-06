@@ -1,0 +1,166 @@
+Add a new feature called "Apply Priority Score" to the job application system.
+
+Goal:
+Automatically rank jobs so the user knows which jobs to apply to first. The score should help prioritize the best opportunities instead of manually scanning all imported jobs.
+
+Requirements:
+
+1. Create a new scoring field for every job:
+- Apply Priority Score
+- numeric range: 0 to 100
+
+2. Also create a priority label based on the score:
+- 90 to 100 = Apply Immediately
+- 75 to 89 = High Priority
+- 60 to 74 = Medium Priority
+- below 60 = Low Priority
+
+3. Score each job using these factors:
+
+A. Role Match
+Highest score if job title matches primary roles:
+- Data Analyst
+- Healthcare Data Analyst
+- Business Analyst
+- Financial Analyst
+- BI Analyst
+
+Medium score if job title matches secondary roles:
+- Data Engineer
+- Data Scientist
+
+Low score if role is unrelated.
+
+B. Experience Level
+Increase score for:
+- Analyst
+- Associate
+- Junior
+- Entry
+
+Decrease score for:
+- Senior
+- Principal
+- Staff
+- Lead
+- Manager
+- Director
+
+C. Freshness
+Increase score heavily for:
+- Fresh 24h
+
+Increase score moderately for:
+- Fresh 48h
+
+Lower score for:
+- Unknown Date
+
+D. Work Mode and Location
+Increase score if:
+- Remote
+- Hybrid
+- preferred locations
+- United States
+- New York
+
+E. Keyword Match
+Increase score if job description contains:
+- SQL
+- Python
+- Tableau
+- Power BI
+- Excel
+- dashboards
+- reporting
+- analytics
+- healthcare analytics
+- business intelligence
+- ETL
+- data visualization
+
+F. Resume Match
+Increase score if a recommended resume exists in Resume Vault.
+Decrease score if no matching resume is found.
+
+G. Source Quality
+Increase score for:
+- Greenhouse
+- Lever
+- Workday
+- Company Career Pages
+
+Lower score for:
+- generic job boards
+
+4. Add two new fields to each job record:
+- applyPriorityScore
+- applyPriorityLabel
+
+5. Add the score and label to these pages:
+
+A. Jobs Inbox
+Add columns:
+- Apply Score
+- Apply Priority
+
+Default sorting should be:
+1. Apply Priority Score descending
+2. Freshness label
+3. Fit score
+4. Ready to Apply status first
+
+B. Job Detail Page
+Show:
+- Apply Priority Score
+- Apply Priority Label
+- A short explanation of why the job received that score
+
+Example explanation:
+"Strong role match, Fresh 24h, Remote, SQL/Python keywords matched."
+
+C. Job Discovery History
+Add columns:
+- Apply Score
+- Apply Priority
+
+D. Tracker
+Show Apply Priority Score on job cards or in the table view.
+
+6. Auto-status behavior
+If Apply Priority Score is:
+- 90 or above → automatically set status to "Ready to Apply"
+- 75 to 89 → keep as "New" but mark as High Priority
+- below 60 → optionally mark as Low Priority
+
+Do not auto-submit any applications.
+
+7. Add filters:
+- Filter by Apply Priority Label
+- Filter by minimum Apply Score
+
+8. Add dashboard cards:
+- Apply Immediately
+- High Priority
+- Medium Priority
+- Low Priority
+
+9. Add a settings section:
+Allow the scoring weights to be adjusted later for:
+- role match
+- freshness
+- experience level
+- keyword match
+- location
+- source quality
+
+10. Keep all existing systems intact:
+- duplicate detection
+- freshness labels
+- role classification
+- fit scoring
+- resume recommendation
+- human final submit
+
+Important:
+This feature should help the user quickly identify the top jobs to apply to first, especially among 100 to 200 imported jobs per day.

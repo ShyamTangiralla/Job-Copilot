@@ -1,15 +1,15 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Settings as SettingsIcon, Plus, X } from "lucide-react";
+import { Settings as SettingsIcon, Plus, X, RefreshCw, Target } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Settings as SettingsType } from "@shared/schema";
 
 interface SettingsData {
@@ -18,15 +18,36 @@ interface SettingsData {
   statuses: string[];
 }
 
+interface ScoringWeights {
+  roleMatch: number;
+  freshness: number;
+  experienceLevel: number;
+  keywordMatch: number;
+  location: number;
+  sourceQuality: number;
+  resumeMatch: number;
+}
+
 export default function SettingsPage() {
   const { toast } = useToast();
   const [newRole, setNewRole] = useState("");
   const [newSource, setNewSource] = useState("");
   const [newStatus, setNewStatus] = useState("");
+  const [weights, setWeights] = useState<ScoringWeights>({
+    roleMatch: 25, freshness: 20, experienceLevel: 15, keywordMatch: 15, location: 15, sourceQuality: 5, resumeMatch: 5,
+  });
 
   const { data: settings, isLoading } = useQuery<SettingsData>({
     queryKey: ["/api/settings"],
   });
+
+  const { data: savedWeights } = useQuery<ScoringWeights>({
+    queryKey: ["/api/scoring-weights"],
+  });
+
+  useEffect(() => {
+    if (savedWeights) setWeights(savedWeights);
+  }, [savedWeights]);
 
   const updateSettings = useMutation({
     mutationFn: async (data: SettingsData) => {
@@ -36,6 +57,28 @@ export default function SettingsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
       toast({ title: "Settings saved" });
+    },
+  });
+
+  const updateWeights = useMutation({
+    mutationFn: async (data: ScoringWeights) => {
+      const res = await apiRequest("PUT", "/api/scoring-weights", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/scoring-weights"] });
+      toast({ title: "Scoring weights saved" });
+    },
+  });
+
+  const recalculateScores = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/jobs/recalculate-scores");
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({ title: "Scores recalculated", description: data.message });
     },
   });
 
@@ -159,6 +202,96 @@ export default function SettingsPage() {
               <Plus className="h-4 w-4" />
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Separator />
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-medium flex items-center gap-2">
+            <Target className="h-4 w-4" />
+            Apply Priority Scoring Weights
+          </CardTitle>
+          <CardDescription>
+            Adjust how much each factor contributes to the Apply Priority Score (0-100). Total should equal 100 for balanced scoring.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {([
+              { key: "roleMatch" as const, label: "Role Match", desc: "Primary/secondary role fit" },
+              { key: "freshness" as const, label: "Freshness", desc: "How recently posted" },
+              { key: "experienceLevel" as const, label: "Experience Level", desc: "Entry/mid vs senior" },
+              { key: "keywordMatch" as const, label: "Keyword Match", desc: "SQL, Python, etc." },
+              { key: "location" as const, label: "Location & Work Mode", desc: "Remote, preferred locations" },
+              { key: "sourceQuality" as const, label: "Source Quality", desc: "Greenhouse, Lever, etc." },
+              { key: "resumeMatch" as const, label: "Resume Match", desc: "Resume available for role" },
+            ]).map(({ key, label, desc }) => (
+              <div key={key} className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm">{label}</Label>
+                  <span className="text-sm font-medium tabular-nums" data-testid={`text-weight-${key}`}>{weights[key]}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">{desc}</p>
+                <Input
+                  type="number"
+                  min={0}
+                  max={50}
+                  value={weights[key]}
+                  onChange={(e) => setWeights({ ...weights, [key]: parseInt(e.target.value) || 0 })}
+                  data-testid={`input-weight-${key}`}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between pt-2">
+            <div className="text-sm text-muted-foreground">
+              Total: <span className={`font-medium ${Object.values(weights).reduce((a, b) => a + b, 0) === 100 ? "text-green-600" : "text-amber-600"}`} data-testid="text-weight-total">
+                {Object.values(weights).reduce((a, b) => a + b, 0)}
+              </span> / 100
+            </div>
+            <Button
+              size="sm"
+              onClick={() => updateWeights.mutate(weights)}
+              disabled={updateWeights.isPending}
+              data-testid="button-save-weights"
+            >
+              Save Weights
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-medium flex items-center gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Recalculate Scores
+          </CardTitle>
+          <CardDescription>
+            Recalculate Apply Priority Scores for all existing jobs using the current scoring weights.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            variant="outline"
+            onClick={() => recalculateScores.mutate()}
+            disabled={recalculateScores.isPending}
+            data-testid="button-recalculate-scores"
+          >
+            {recalculateScores.isPending ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Recalculating...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Recalculate All Scores
+              </>
+            )}
+          </Button>
         </CardContent>
       </Card>
     </div>

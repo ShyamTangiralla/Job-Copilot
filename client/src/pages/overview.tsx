@@ -13,6 +13,10 @@ import {
   FileText,
   Clock,
   Timer,
+  Zap,
+  ArrowUp,
+  Minus,
+  ArrowDown,
 } from "lucide-react";
 import type { Job, Resume } from "@shared/schema";
 
@@ -40,6 +44,10 @@ export default function Overview() {
     activeResumes: resumes?.filter((r) => r.active).length ?? 0,
     fresh24h: jobs?.filter((j) => j.freshnessLabel === "Fresh 24h").length ?? 0,
     fresh48h: jobs?.filter((j) => j.freshnessLabel === "Fresh 48h").length ?? 0,
+    applyImmediately: jobs?.filter((j) => j.applyPriorityLabel === "Apply Immediately").length ?? 0,
+    highPriority: jobs?.filter((j) => j.applyPriorityLabel === "High Priority").length ?? 0,
+    mediumPriority: jobs?.filter((j) => j.applyPriorityLabel === "Medium Priority").length ?? 0,
+    lowPriority: jobs?.filter((j) => j.applyPriorityLabel === "Low Priority").length ?? 0,
   };
 
   const recentJobs = jobs?.slice(0, 5) ?? [];
@@ -55,6 +63,13 @@ export default function Overview() {
     { label: "Skipped", value: stats.skipped, icon: SkipForward, color: "text-muted-foreground" },
     { label: "Rejected", value: stats.rejected, icon: XCircle, color: "text-red-500 dark:text-red-400" },
     { label: "Active Resumes", value: stats.activeResumes, icon: FileText, color: "text-indigo-600 dark:text-indigo-400" },
+  ];
+
+  const priorityCards = [
+    { label: "Apply Immediately", value: stats.applyImmediately, icon: Zap, color: "text-red-600 dark:text-red-400" },
+    { label: "High Priority", value: stats.highPriority, icon: ArrowUp, color: "text-orange-600 dark:text-orange-400" },
+    { label: "Medium Priority", value: stats.mediumPriority, icon: Minus, color: "text-amber-600 dark:text-amber-400" },
+    { label: "Low Priority", value: stats.lowPriority, icon: ArrowDown, color: "text-muted-foreground" },
   ];
 
   const statusColor: Record<string, string> = {
@@ -92,6 +107,31 @@ export default function Overview() {
                     <stat.icon className={`h-4 w-4 ${stat.color}`} />
                   </div>
                   <p className="text-2xl font-bold" data-testid={`text-stat-${stat.label.toLowerCase().replace(/\s+/g, "-")}`}>
+                    {stat.value}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {isLoading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i}>
+                <CardContent className="p-4">
+                  <Skeleton className="h-4 w-20 mb-2" />
+                  <Skeleton className="h-8 w-12" />
+                </CardContent>
+              </Card>
+            ))
+          : priorityCards.map((stat) => (
+              <Card key={stat.label}>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between gap-1 mb-1">
+                    <span className="text-xs text-muted-foreground font-medium">{stat.label}</span>
+                    <stat.icon className={`h-4 w-4 ${stat.color}`} />
+                  </div>
+                  <p className="text-2xl font-bold" data-testid={`text-priority-${stat.label.toLowerCase().replace(/\s+/g, "-")}`}>
                     {stat.value}
                   </p>
                 </CardContent>

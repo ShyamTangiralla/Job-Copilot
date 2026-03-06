@@ -47,6 +47,8 @@ export interface IStorage {
 
   getDiscoverySettings(): Promise<any>;
   updateDiscoverySettings(data: any): Promise<void>;
+  getScoringWeights(): Promise<{ roleMatch: number; freshness: number; experienceLevel: number; keywordMatch: number; location: number; sourceQuality: number; resumeMatch: number }>;
+  updateScoringWeights(data: any): Promise<void>;
   createDiscoveryRun(data: InsertDiscoveryRun): Promise<DiscoveryRun>;
   updateDiscoveryRun(id: number, data: Partial<InsertDiscoveryRun>): Promise<DiscoveryRun | undefined>;
   getDiscoveryRuns(): Promise<DiscoveryRun[]>;
@@ -54,6 +56,7 @@ export interface IStorage {
   createDiscoveryResult(data: InsertDiscoveryResult): Promise<DiscoveryResult>;
   getDiscoveryResults(runId: number): Promise<DiscoveryResult[]>;
   getRecentDiscoveryResults(): Promise<DiscoveryResult[]>;
+  recalculateAllPriorityScores(): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -105,7 +108,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createJob(data: InsertJob): Promise<Job> {
-    const { matchScoreNumeric: _, ...classified } = this.classifyAndScore(data);
+    const weights = await this.getScoringWeights();
+    const { matchScoreNumeric: _, ...classified } = this.classifyAndScore(data, weights);
     const [created] = await db.insert(jobs).values(classified).returning();
     return created;
   }
@@ -114,12 +118,40 @@ export class DatabaseStorage implements IStorage {
     if (data.title !== undefined || data.description !== undefined) {
       const existing = await this.getJob(id);
       if (existing) {
+        const weights = await this.getScoringWeights();
         const merged = { ...existing, ...data };
-        const { matchScoreNumeric: _, ...reclassified } = this.classifyAndScore(merged as InsertJob);
-        data = { ...data, roleClassification: reclassified.roleClassification, fitLabel: reclassified.fitLabel, resumeRecommendation: reclassified.resumeRecommendation };
+        const { matchScoreNumeric: _, ...reclassified } = this.classifyAndScore(merged as InsertJob, weights);
+        data = {
+          ...data,
+          roleClassification: reclassified.roleClassification,
+          fitLabel: reclassified.fitLabel,
+          resumeRecommendation: reclassified.resumeRecommendation,
+          applyPriorityScore: reclassified.applyPriorityScore,
+          applyPriorityLabel: reclassified.applyPriorityLabel,
+          applyPriorityExplanation: reclassified.applyPriorityExplanation,
+        };
       }
     }
     const [updated] = await db.update(jobs).set(data).where(eq(jobs.id, id)).returning();
+    return updated;
+  }
+
+  async recalculateAllPriorityScores(): Promise<number> {
+    const weights = await this.getScoringWeights();
+    const allJobs = await this.getJobs();
+    let updated = 0;
+    for (const job of allJobs) {
+      const { matchScoreNumeric: _, ...reclassified } = this.classifyAndScore(job as InsertJob, weights);
+      await db.update(jobs).set({
+        applyPriorityScore: reclassified.applyPriorityScore,
+        applyPriorityLabel: reclassified.applyPriorityLabel,
+        applyPriorityExplanation: reclassified.applyPriorityExplanation,
+        roleClassification: reclassified.roleClassification,
+        fitLabel: reclassified.fitLabel,
+        resumeRecommendation: reclassified.resumeRecommendation,
+      }).where(eq(jobs.id, job.id));
+      updated++;
+    }
     return updated;
   }
 
@@ -226,6 +258,26 @@ export class DatabaseStorage implements IStorage {
     return val;
   }
 
+  async getScoringWeights(): Promise<{
+    roleMatch: number; freshness: number; experienceLevel: number;
+    keywordMatch: number; location: number; sourceQuality: number; resumeMatch: number;
+  }> {
+    const rows = await db.select().from(settings).where(eq(settings.key, "scoringWeights"));
+    if (rows.length === 0) {
+      return { roleMatch: 25, freshness: 20, experienceLevel: 15, keywordMatch: 15, location: 15, sourceQuality: 5, resumeMatch: 5 };
+    }
+    return rows[0].value as any;
+  }
+
+  async updateScoringWeights(data: any): Promise<void> {
+    const existing = await db.select().from(settings).where(eq(settings.key, "scoringWeights"));
+    if (existing.length === 0) {
+      await db.insert(settings).values({ key: "scoringWeights", value: data });
+    } else {
+      await db.update(settings).set({ value: data }).where(eq(settings.key, "scoringWeights"));
+    }
+  }
+
   async updateDiscoverySettings(data: any): Promise<void> {
     const existing = await db.select().from(settings).where(eq(settings.key, "discovery"));
     if (existing.length === 0) {
@@ -267,12 +319,15 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(discoveryResults).orderBy(desc(discoveryResults.createdAt)).limit(50);
   }
 
-  classifyAndScore(data: InsertJob): InsertJob & { matchScoreNumeric: number } {
+  classifyAndScore(data: InsertJob, weights?: { roleMatch: number; freshness: number; experienceLevel: number; keywordMatch: number; location: number; sourceQuality: number; resumeMatch: number }): InsertJob & { matchScoreNumeric: number } {
+    const w = weights ?? { roleMatch: 25, freshness: 20, experienceLevel: 15, keywordMatch: 15, location: 15, sourceQuality: 5, resumeMatch: 5 };
     const title = (data.title ?? "").toLowerCase();
     const desc = (data.description ?? "").toLowerCase();
     const combined = `${title} ${desc}`;
     const source = (data.source ?? "").toLowerCase();
     const location = (data.location ?? "").toLowerCase();
+    const workMode = (data.workMode ?? "").toLowerCase();
+    const freshnessLabel = data.freshnessLabel ?? "";
 
     let roleClassification = "Unknown";
     if (combined.includes("healthcare") && combined.includes("data analyst")) {
@@ -323,12 +378,115 @@ export class DatabaseStorage implements IStorage {
       resumeRecommendation = roleClassification;
     }
 
+    const priority = this.computeApplyPriorityScore({
+      title, desc: combined, source, location, workMode, freshnessLabel, roleClassification, resumeRecommendation,
+    }, w);
+
     return {
       ...data,
       roleClassification,
       fitLabel,
       resumeRecommendation,
+      applyPriorityScore: priority.applyPriorityScore,
+      applyPriorityLabel: priority.applyPriorityLabel,
+      applyPriorityExplanation: priority.applyPriorityExplanation,
       matchScoreNumeric: score,
+    };
+  }
+
+  computeApplyPriorityScore(input: {
+    title: string; desc: string; source: string; location: string;
+    workMode: string; freshnessLabel: string; roleClassification: string;
+    resumeRecommendation: string;
+  }, weights?: { roleMatch: number; freshness: number; experienceLevel: number; keywordMatch: number; location: number; sourceQuality: number; resumeMatch: number }): { applyPriorityScore: number; applyPriorityLabel: string; applyPriorityExplanation: string } {
+    const w = weights ?? { roleMatch: 25, freshness: 20, experienceLevel: 15, keywordMatch: 15, location: 15, sourceQuality: 5, resumeMatch: 5 };
+    const { title, desc, source, location, workMode, freshnessLabel, roleClassification, resumeRecommendation } = input;
+    const explanations: string[] = [];
+    let totalScore = 0;
+
+    const primaryRoles = ["data analyst", "healthcare data analyst", "business analyst", "financial analyst", "bi analyst"];
+    const secondaryRoles = ["data engineer", "data scientist"];
+    if (primaryRoles.some(r => title.includes(r))) {
+      totalScore += w.roleMatch;
+      explanations.push("Strong role match");
+    } else if (secondaryRoles.some(r => title.includes(r))) {
+      totalScore += Math.round(w.roleMatch * 0.48);
+      explanations.push("Secondary role match");
+    }
+
+    const seniorTerms = ["senior", "principal", "director", "staff", "lead", "manager"];
+    const juniorTerms = ["analyst", "associate", "junior", "entry"];
+    const isSenior = seniorTerms.some(t => title.includes(t));
+    const isJunior = juniorTerms.some(t => title.includes(t));
+    if (isJunior && !isSenior) {
+      totalScore += w.experienceLevel;
+      explanations.push("Entry/mid level");
+    } else if (!isSenior && !isJunior) {
+      totalScore += Math.round(w.experienceLevel * 0.53);
+    } else {
+      explanations.push("Senior level (reduced)");
+    }
+
+    if (freshnessLabel === "Fresh 24h") {
+      totalScore += w.freshness;
+      explanations.push("Fresh 24h");
+    } else if (freshnessLabel === "Fresh 48h") {
+      totalScore += Math.round(w.freshness * 0.6);
+      explanations.push("Fresh 48h");
+    } else {
+      totalScore += Math.round(w.freshness * 0.25);
+    }
+
+    const wm = workMode.toLowerCase();
+    if (wm === "remote") {
+      totalScore += Math.round(w.location * 0.67);
+      explanations.push("Remote");
+    } else if (wm === "hybrid") {
+      totalScore += Math.round(w.location * 0.53);
+      explanations.push("Hybrid");
+    }
+    const preferredLocs = ["united states", "new york"];
+    if (preferredLocs.some(loc => location.includes(loc))) {
+      totalScore += Math.round(w.location * 0.33);
+      explanations.push("Preferred location");
+    }
+
+    const kwList = ["sql", "python", "tableau", "power bi", "excel", "dashboards", "reporting", "analytics", "healthcare analytics", "business intelligence", "etl", "data visualization"];
+    const matchedKw: string[] = [];
+    kwList.forEach(kw => {
+      if (desc.includes(kw)) matchedKw.push(kw.toUpperCase());
+    });
+    const kwScore = Math.min(w.keywordMatch, Math.round(matchedKw.length * (w.keywordMatch / 12)));
+    totalScore += kwScore;
+    if (matchedKw.length > 0) {
+      explanations.push(`${matchedKw.slice(0, 4).join("/")} keywords matched`);
+    }
+
+    if (resumeRecommendation && resumeRecommendation !== "" && roleClassification !== "Unknown") {
+      totalScore += w.resumeMatch;
+      explanations.push("Resume available");
+    }
+
+    const preferredSources = ["greenhouse", "lever", "workday", "company career"];
+    if (preferredSources.some(s => source.includes(s))) {
+      totalScore += w.sourceQuality;
+      explanations.push("Quality source");
+    } else {
+      totalScore += Math.round(w.sourceQuality * 0.2);
+    }
+
+    const clamped = Math.max(0, Math.min(100, totalScore));
+
+    let label: string;
+    if (clamped >= 90) label = "Apply Immediately";
+    else if (clamped >= 75) label = "High Priority";
+    else if (clamped >= 60) label = "Medium Priority";
+    else label = "Low Priority";
+
+    return {
+      applyPriorityScore: clamped,
+      applyPriorityLabel: label,
+      applyPriorityExplanation: explanations.join(", "),
     };
   }
 }

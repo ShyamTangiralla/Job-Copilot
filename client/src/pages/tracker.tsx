@@ -232,6 +232,11 @@ export default function Tracker() {
                           <p className="text-sm font-medium truncate">{job.title}</p>
                           <p className="text-xs text-muted-foreground truncate mt-0.5">{job.company}</p>
                           <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                            {job.applyPriorityScore > 0 && (
+                              <Badge variant={job.applyPriorityScore >= 75 ? "default" : "secondary"} className="text-[10px] px-1.5 py-0">
+                                {job.applyPriorityScore}
+                              </Badge>
+                            )}
                             {job.fitLabel && (
                               <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                                 {job.fitLabel}
@@ -272,6 +277,8 @@ export default function Tracker() {
                         <TableHead className="min-w-[160px]">Job Title</TableHead>
                         <TableHead>Company</TableHead>
                         <TableHead>Source</TableHead>
+                        <TableHead>Apply Score</TableHead>
+                        <TableHead>Apply Priority</TableHead>
                         <TableHead>Priority</TableHead>
                         <TableHead>Classification</TableHead>
                         <TableHead>Status</TableHead>
@@ -291,6 +298,16 @@ export default function Tracker() {
                           <TableCell className="font-medium">{job.title}</TableCell>
                           <TableCell>{job.company}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">{job.source}</TableCell>
+                          <TableCell>
+                            <span className="text-sm font-medium">{job.applyPriorityScore > 0 ? job.applyPriorityScore : "—"}</span>
+                          </TableCell>
+                          <TableCell>
+                            {job.applyPriorityLabel ? (
+                              <Badge variant={job.applyPriorityLabel === "Apply Immediately" || job.applyPriorityLabel === "High Priority" ? "default" : job.applyPriorityLabel === "Medium Priority" ? "secondary" : "outline"} className="text-xs">
+                                {job.applyPriorityLabel}
+                              </Badge>
+                            ) : "—"}
+                          </TableCell>
                           <TableCell>
                             <span className={`text-xs font-medium ${priorityIcon[job.priority]}`}>
                               {job.priority}

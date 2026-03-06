@@ -440,8 +440,20 @@ export async function runDiscovery(): Promise<number> {
             continue;
           }
 
+          const priorityResult = storage.computeApplyPriorityScore({
+            title: discovered.title.toLowerCase(),
+            desc: `${discovered.title} ${discovered.description}`.toLowerCase(),
+            source: discovered.source.toLowerCase(),
+            location: discovered.location.toLowerCase(),
+            workMode: discovered.workMode.toLowerCase(),
+            freshnessLabel: discovered.freshnessLabel ?? "",
+            roleClassification: "",
+            resumeRecommendation: "",
+          });
+
           let statusFromScore: string;
-          if (discovered.matchScore === "Strong Match") statusFromScore = "Ready to Apply";
+          if (priorityResult.applyPriorityScore >= 90) statusFromScore = "Ready to Apply";
+          else if (discovered.matchScore === "Strong Match") statusFromScore = "Ready to Apply";
           else if (discovered.matchScore === "Possible Match") statusFromScore = "New";
           else statusFromScore = "Skipped";
 
@@ -472,6 +484,8 @@ export async function runDiscovery(): Promise<number> {
             recommendedResume: job.resumeRecommendation,
             matchScore: discovered.matchScore ?? "",
             freshnessLabel: discovered.freshnessLabel ?? "",
+            applyPriorityScore: job.applyPriorityScore,
+            applyPriorityLabel: job.applyPriorityLabel,
             jobId: job.id,
           });
 
