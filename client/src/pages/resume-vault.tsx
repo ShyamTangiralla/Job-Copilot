@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,15 +14,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Plus, FileText, Pencil, Trash2, Clock } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Plus, FileText, Pencil, Trash2, Clock, Upload, Eye, Download, File, X } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Resume } from "@shared/schema";
@@ -32,6 +27,8 @@ export default function ResumeVault() {
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingResume, setEditingResume] = useState<Resume | null>(null);
+  const [uploadingId, setUploadingId] = useState<number | null>(null);
+  const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   const { data: resumes, isLoading } = useQuery<Resume[]>({
     queryKey: ["/api/resumes"],
@@ -83,6 +80,44 @@ export default function ResumeVault() {
     },
   });
 
+  const uploadFile = useMutation({
+    mutationFn: async ({ id, file }: { id: number; file: File }) => {
+      setUploadingId(id);
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/resumes/${id}/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Upload failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/resumes"] });
+      toast({ title: "File uploaded" });
+      setUploadingId(null);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+      setUploadingId(null);
+    },
+  });
+
+  const removeFile = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/resumes/${id}/file`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to remove file");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/resumes"] });
+      toast({ title: "File removed" });
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -99,6 +134,22 @@ export default function ResumeVault() {
     }
   };
 
+  const handleFileSelect = (resumeId: number, file: File) => {
+    const allowed = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    if (!allowed.includes(file.type)) {
+      toast({ title: "Invalid file type", description: "Only PDF and DOCX files are allowed.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum file size is 10 MB.", variant: "destructive" });
+      return;
+    }
+    uploadFile.mutate({ id: resumeId, file });
+  };
+
   const openEdit = (resume: Resume) => {
     setEditingResume(resume);
     setDialogOpen(true);
@@ -109,13 +160,19 @@ export default function ResumeVault() {
     setDialogOpen(true);
   };
 
+  const getFileExtBadge = (fileType: string) => {
+    if (fileType.includes("pdf")) return "PDF";
+    if (fileType.includes("wordprocessingml")) return "DOCX";
+    return "File";
+  };
+
   return (
     <div className="p-6 space-y-4 max-w-5xl mx-auto">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold" data-testid="text-page-title">Resume Vault</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Manage your master resumes for different role types.
+            Manage your master resumes for different role types. Upload files and maintain plain text for matching.
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setEditingResume(null); }}>
@@ -128,6 +185,9 @@ export default function ResumeVault() {
           <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingResume ? "Edit Resume" : "Add Resume"}</DialogTitle>
+              <DialogDescription>
+                {editingResume ? "Update resume details and plain text content." : "Create a new resume entry. You can upload a file after saving."}
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-3">
               <div className="space-y-1">
@@ -161,9 +221,10 @@ export default function ResumeVault() {
                   name="plainText"
                   rows={10}
                   defaultValue={editingResume?.plainText ?? ""}
-                  placeholder="Paste your resume content here..."
+                  placeholder="Paste your resume content here for AI matching and preview..."
                   data-testid="input-resume-text"
                 />
+                <p className="text-xs text-muted-foreground">Used for role matching and text preview. Keep this updated alongside your file.</p>
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)} data-testid="button-cancel-resume">
@@ -215,11 +276,98 @@ export default function ResumeVault() {
                     />
                   </div>
                 </div>
+
+                {resume.fileName ? (
+                  <div className="border rounded-md p-3 mb-3 bg-muted/30" data-testid={`file-info-${resume.id}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <File className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm truncate" data-testid={`text-filename-${resume.id}`}>{resume.fileName}</span>
+                      <Badge variant="outline" className="text-xs shrink-0">{getFileExtBadge(resume.fileType)}</Badge>
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(`/api/resumes/${resume.id}/file`, "_blank")}
+                        data-testid={`button-view-resume-${resume.id}`}
+                      >
+                        <Eye className="h-3.5 w-3.5 mr-1" />
+                        View
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(`/api/resumes/${resume.id}/download`, "_blank")}
+                        data-testid={`button-download-resume-${resume.id}`}
+                      >
+                        <Download className="h-3.5 w-3.5 mr-1" />
+                        Download
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRefs.current[resume.id]?.click()}
+                        disabled={uploadingId === resume.id}
+                        data-testid={`button-replace-file-${resume.id}`}
+                      >
+                        <Upload className="h-3.5 w-3.5 mr-1" />
+                        Replace
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeFile.mutate(resume.id)}
+                        data-testid={`button-remove-file-${resume.id}`}
+                      >
+                        <X className="h-3.5 w-3.5 mr-1" />
+                        Remove
+                      </Button>
+                    </div>
+                    <input
+                      type="file"
+                      accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      className="hidden"
+                      ref={(el) => { fileInputRefs.current[resume.id] = el; }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleFileSelect(resume.id, file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="border border-dashed rounded-md p-3 mb-3 text-center" data-testid={`upload-area-${resume.id}`}>
+                    <Upload className="h-5 w-5 mx-auto text-muted-foreground mb-1" />
+                    <p className="text-xs text-muted-foreground mb-2">No file attached</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRefs.current[resume.id]?.click()}
+                      disabled={uploadingId === resume.id}
+                      data-testid={`button-upload-file-${resume.id}`}
+                    >
+                      {uploadingId === resume.id ? "Uploading..." : "Upload PDF or DOCX"}
+                    </Button>
+                    <input
+                      type="file"
+                      accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      className="hidden"
+                      ref={(el) => { fileInputRefs.current[resume.id] = el; }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleFileSelect(resume.id, file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
+                )}
+
                 {resume.plainText && (
                   <p className="text-xs text-muted-foreground line-clamp-3 mb-3">
                     {resume.plainText.substring(0, 200)}...
                   </p>
                 )}
+
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground flex items-center gap-1">
                     <Clock className="h-3 w-3" />

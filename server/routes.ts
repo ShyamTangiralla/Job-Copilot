@@ -1,7 +1,40 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import { storage } from "./storage";
 import { insertJobSchema, insertResumeSchema, insertApplicationAnswerSchema, insertCandidateProfileSchema } from "@shared/schema";
+
+const uploadsDir = path.join(process.cwd(), "uploads", "resumes");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const resumeStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadsDir),
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, `resume-${uniqueSuffix}${ext}`);
+  },
+});
+
+const uploadResume = multer({
+  storage: resumeStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF and DOCX files are allowed"));
+    }
+  },
+});
 
 export async function registerRoutes(
   httpServer: Server,
@@ -62,9 +95,99 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/resumes/:id/upload", (req, res, next) => {
+    uploadResume.single("file")(req, res, (err) => {
+      if (err) {
+        const message = err instanceof multer.MulterError
+          ? (err.code === "LIMIT_FILE_SIZE" ? "File too large. Maximum size is 10 MB." : err.message)
+          : err.message || "File upload failed";
+        return res.status(400).json({ message });
+      }
+      next();
+    });
+  }, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid resume ID" });
+      const file = req.file;
+      if (!file) return res.status(400).json({ message: "No file uploaded" });
+      const resume = await storage.getResume(id);
+      if (!resume) {
+        fs.unlinkSync(file.path);
+        return res.status(404).json({ message: "Resume not found" });
+      }
+      if (resume.filePath) {
+        const oldPath = path.join(uploadsDir, path.basename(resume.filePath));
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      }
+      const updated = await storage.updateResume(id, {
+        fileName: file.originalname,
+        filePath: file.filename,
+        fileType: file.mimetype,
+      });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/resumes/:id/file", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid resume ID" });
+      const resume = await storage.getResume(id);
+      if (!resume || !resume.filePath) return res.status(404).json({ message: "No file found" });
+      const filePath = path.join(uploadsDir, path.basename(resume.filePath));
+      if (!fs.existsSync(filePath)) return res.status(404).json({ message: "File missing from disk" });
+      res.setHeader("Content-Type", resume.fileType || "application/octet-stream");
+      res.setHeader("Content-Disposition", `inline; filename="${resume.fileName}"`);
+      fs.createReadStream(filePath).pipe(res);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/resumes/:id/download", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid resume ID" });
+      const resume = await storage.getResume(id);
+      if (!resume || !resume.filePath) return res.status(404).json({ message: "No file found" });
+      const filePath = path.join(uploadsDir, path.basename(resume.filePath));
+      if (!fs.existsSync(filePath)) return res.status(404).json({ message: "File missing from disk" });
+      res.setHeader("Content-Type", resume.fileType || "application/octet-stream");
+      res.setHeader("Content-Disposition", `attachment; filename="${resume.fileName}"`);
+      fs.createReadStream(filePath).pipe(res);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/resumes/:id/file", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid resume ID" });
+      const resume = await storage.getResume(id);
+      if (!resume) return res.status(404).json({ message: "Resume not found" });
+      if (resume.filePath) {
+        const filePath = path.join(uploadsDir, path.basename(resume.filePath));
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      }
+      const updated = await storage.updateResume(id, { fileName: "", filePath: "", fileType: "" });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   app.delete("/api/resumes/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      const resume = await storage.getResume(id);
+      if (resume?.filePath) {
+        const filePath = path.join(uploadsDir, path.basename(resume.filePath));
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      }
       await storage.deleteResume(id);
       res.json({ ok: true });
     } catch (e: any) {

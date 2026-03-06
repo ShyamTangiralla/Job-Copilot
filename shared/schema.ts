@@ -29,6 +29,9 @@ export const resumes = pgTable("resumes", {
   name: text("name").notNull(),
   roleType: text("role_type").notNull(),
   plainText: text("plain_text").notNull().default(""),
+  fileName: text("file_name").notNull().default(""),
+  filePath: text("file_path").notNull().default(""),
+  fileType: text("file_type").notNull().default(""),
   active: boolean("active").notNull().default(true),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

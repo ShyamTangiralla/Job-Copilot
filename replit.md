@@ -17,7 +17,7 @@ This app helps manage the job application workflow: classify jobs by role type, 
 ## Data Model
 
 - `candidate_profile` - Personal info, work authorization, preferences
-- `resumes` - Master resumes tagged by role type (Data Analyst, Healthcare Data Analyst, Healthcare Analyst, Business Analyst)
+- `resumes` - Master resumes tagged by role type with file upload support (fileName, filePath, fileType columns)
 - `jobs` - Job listings with classification, fit scoring, status tracking, priority (High/Medium/Low), and follow-up dates
 - `application_answers` - Standard Q&A pairs for common application questions
 - `activity_log` - Tracks status changes and actions
@@ -49,6 +49,10 @@ Simple label-based scoring (Strong Match, Possible Match, Weak Match) based on k
 - `GET /api/jobs/export/csv` - Export all jobs as CSV
 - `GET/POST /api/resumes` - List/create resumes
 - `PATCH /api/resumes/:id` - Update resume
+- `POST /api/resumes/:id/upload` - Upload resume file (PDF/DOCX, multipart form)
+- `GET /api/resumes/:id/file` - View resume file inline
+- `GET /api/resumes/:id/download` - Download resume file
+- `DELETE /api/resumes/:id/file` - Remove uploaded file
 - `GET/PATCH /api/profile` - Get/update candidate profile
 - `GET/POST /api/answers` - List/create application answers
 - `PATCH/DELETE /api/answers/:id` - Update/delete answer
