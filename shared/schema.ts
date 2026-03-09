@@ -61,6 +61,8 @@ export const jobs = pgTable("jobs", {
   priority: text("priority").notNull().default("Medium"),
   notes: text("notes").notNull().default(""),
   followUpDate: text("follow_up_date").notNull().default(""),
+  importSource: text("import_source").notNull().default(""),
+  importedAt: timestamp("imported_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

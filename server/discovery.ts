@@ -479,6 +479,8 @@ export async function runDiscovery(): Promise<number> {
             applyLink: discovered.applyLink,
             status: statusFromScore,
             freshnessLabel: discovered.freshnessLabel === "Too Old" ? "Unknown Date" : discovered.freshnessLabel ?? "Unknown Date",
+            importSource: "discovery",
+            importedAt: new Date(),
           });
 
           imported++;

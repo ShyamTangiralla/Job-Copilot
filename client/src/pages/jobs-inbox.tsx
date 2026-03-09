@@ -66,6 +66,7 @@ export default function JobsInbox() {
   const [filterApplyPriority, setFilterApplyPriority] = useState("all");
   const [filterMinScore, setFilterMinScore] = useState("all");
   const [quickFilter, setQuickFilter] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<"score" | "imported">("score");
   const [showFilters, setShowFilters] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState<Job | null>(null);
@@ -168,6 +169,11 @@ export default function JobsInbox() {
     if (filterMinScore !== "all" && job.applyPriorityScore < parseInt(filterMinScore)) return false;
     return true;
   }).sort((a, b) => {
+    if (sortBy === "imported") {
+      const aTime = a.importedAt ? new Date(a.importedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+      const bTime = b.importedAt ? new Date(b.importedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+      return bTime - aTime;
+    }
     const scoreDiff = (b.applyPriorityScore ?? 0) - (a.applyPriorityScore ?? 0);
     if (scoreDiff !== 0) return scoreDiff;
     const freshnessOrder: Record<string, number> = { "Fresh 24h": 0, "Fresh 48h": 1, "Unknown Date": 2, "": 3 };
@@ -405,6 +411,27 @@ export default function JobsInbox() {
             <X className="h-3 w-3 mr-1" />Clear
           </Button>
         )}
+        <div className="ml-auto flex items-center gap-1">
+          <span className="text-xs text-muted-foreground">Sort:</span>
+          <Button
+            variant={sortBy === "score" ? "default" : "outline"}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setSortBy("score")}
+            data-testid="sort-by-score"
+          >
+            By Score
+          </Button>
+          <Button
+            variant={sortBy === "imported" ? "default" : "outline"}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setSortBy("imported")}
+            data-testid="sort-by-imported"
+          >
+            Newest First
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">

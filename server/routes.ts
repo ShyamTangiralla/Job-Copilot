@@ -399,6 +399,8 @@ export async function registerRoutes(
         description: scraped.description,
         applyLink: scraped.applyLink,
         status: "New",
+        importSource: "url",
+        importedAt: new Date(),
       });
 
       await storage.createImportLog({
@@ -470,6 +472,8 @@ export async function registerRoutes(
             location: parsed_job.location || "",
             applyLink: parsed_job.applyLink || "",
             status: "New",
+            importSource: "email",
+            importedAt: new Date(),
           });
 
           await storage.createImportLog({
@@ -576,6 +580,8 @@ export async function registerRoutes(
             description,
             applyLink,
             status: "New",
+            importSource: "bulk-paste",
+            importedAt: new Date(),
           });
 
           await storage.createImportLog({
@@ -621,7 +627,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Maximum 200 URLs per batch" });
       }
 
-      const results: Array<{ url: string; title: string; company: string; status: string; jobId?: number; error?: string; duplicateReason?: string; existingJobId?: number }> = [];
+      const results: Array<{ url: string; title: string; company: string; status: string; jobId?: number; error?: string; duplicateReason?: string; existingJobId?: number; importedAt?: string; verifiedInDb?: boolean }> = [];
 
       for (const url of urlList) {
         try {
@@ -664,19 +670,41 @@ export async function registerRoutes(
             description: scraped.description,
             applyLink: scraped.applyLink,
             status: "New",
+            importSource: "bulk-urls",
+            importedAt: new Date(),
           });
+
+          const verified = await storage.getJob(job.id);
+          if (!verified) {
+            await storage.createImportLog({
+              sourceType: "bulk-urls",
+              sourceUrl: url,
+              status: "failed",
+              jobTitle: scraped.title,
+              jobCompany: scraped.company,
+              errorMessage: "Job was not found in database after insert",
+            });
+            results.push({ url, title: scraped.title, company: scraped.company, status: "failed", error: "Job insert failed verification", jobId: undefined, importedAt: "" });
+            continue;
+          }
 
           await storage.createImportLog({
             sourceType: "bulk-urls",
             sourceUrl: url,
             status: "success",
-            jobId: job.id,
-            jobTitle: job.title,
-            jobCompany: job.company,
+            jobId: verified.id,
+            jobTitle: verified.title,
+            jobCompany: verified.company,
           });
 
-          results.push({ url, title: job.title, company: job.company, status: "success", jobId: job.id });
+          results.push({ url, title: verified.title, company: verified.company, status: "success", jobId: verified.id, importedAt: verified.importedAt?.toISOString?.() || new Date().toISOString(), verifiedInDb: true });
         } catch (err: any) {
+          await storage.createImportLog({
+            sourceType: "bulk-urls",
+            sourceUrl: url,
+            status: "failed",
+            errorMessage: err.message || "Unknown error",
+          }).catch(() => {});
           results.push({ url, title: "", company: "", status: "failed", error: err.message });
         }
       }

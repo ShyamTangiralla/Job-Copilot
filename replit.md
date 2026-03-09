@@ -18,7 +18,7 @@ This app helps manage the job application workflow: classify jobs by role type, 
 
 - `candidate_profile` - Personal info, work authorization, preferences
 - `resumes` - Master resumes tagged by role type with file upload support (fileName, filePath, fileType columns)
-- `jobs` - Job listings with classification, fit scoring, status tracking, priority (High/Medium/Low), and follow-up dates
+- `jobs` - Job listings with classification, fit scoring, status tracking, priority (High/Medium/Low), follow-up dates, importSource, importedAt
 - `application_answers` - Standard Q&A pairs for common application questions
 - `tailored_resumes` - Tailored resume versions per job (jobId, resumeId, originalText, tailoredText, keywordAnalysis, improvements, matchBefore, matchAfter, improvementSummary)
 - `activity_log` - Tracks status changes and actions

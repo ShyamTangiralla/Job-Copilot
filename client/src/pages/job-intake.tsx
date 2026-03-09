@@ -138,8 +138,9 @@ function PasteUrlTab({ initialUrl }: { initialUrl?: string }) {
 function BulkUrlTab() {
   const [urls, setUrls] = useState("");
   const { toast } = useToast();
-  const [results, setResults] = useState<Array<{ url: string; title: string; company: string; status: string; error?: string; duplicateReason?: string; existingJobId?: number }> | null>(null);
+  const [results, setResults] = useState<Array<{ url: string; title: string; company: string; status: string; jobId?: number; error?: string; duplicateReason?: string; existingJobId?: number; importedAt?: string; verifiedInDb?: boolean }> | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
 
   const urlCount = urls.split("\n").filter(u => u.trim().startsWith("http")).length;
 
@@ -192,22 +193,46 @@ function BulkUrlTab() {
           <div className="space-y-2 mt-4" data-testid="bulk-url-import-results">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-medium">Import Results</h4>
-              <div className="flex gap-2 text-xs">
+              <div className="flex gap-2 text-xs items-center">
                 <Badge variant="default" className="bg-green-600">{results.filter(r => r.status === "success").length} imported</Badge>
                 <Badge variant="secondary">{results.filter(r => r.status === "duplicate").length} duplicates</Badge>
                 <Badge variant="destructive">{results.filter(r => r.status === "failed").length} failed</Badge>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs px-2"
+                  onClick={() => setShowDebug(!showDebug)}
+                  data-testid="button-toggle-debug"
+                >
+                  {showDebug ? "Hide Debug" : "Show Debug"}
+                </Button>
               </div>
             </div>
-            <div className="max-h-80 overflow-y-auto space-y-1">
+            <div className="max-h-96 overflow-y-auto space-y-1">
               {results.map((r, i) => (
-                <div key={i} className="flex items-center justify-between p-2 rounded border text-sm" data-testid={`bulk-url-result-${i}`}>
-                  <div className="min-w-0 flex-1">
-                    <span className="font-medium truncate block">{r.title || r.url}</span>
-                    {r.company && <span className="text-muted-foreground text-xs">{r.company}</span>}
-                    {r.duplicateReason && <span className="text-yellow-600 dark:text-yellow-400 text-xs block">{r.duplicateReason}</span>}
-                    {r.error && <span className="text-destructive text-xs block">{r.error}</span>}
+                <div key={i} className="p-2 rounded border text-sm" data-testid={`bulk-url-result-${i}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium truncate block">{r.title || r.url}</span>
+                      {r.company && <span className="text-muted-foreground text-xs">{r.company}</span>}
+                      {r.duplicateReason && <span className="text-yellow-600 dark:text-yellow-400 text-xs block">{r.duplicateReason}</span>}
+                      {r.error && <span className="text-destructive text-xs block">{r.error}</span>}
+                    </div>
+                    <StatusBadge status={r.status} />
                   </div>
-                  <StatusBadge status={r.status} />
+                  {showDebug && (
+                    <div className="mt-1 pt-1 border-t text-xs text-muted-foreground space-y-0.5" data-testid={`debug-panel-${i}`}>
+                      <div className="flex gap-4">
+                        <span>Job ID: <strong data-testid={`debug-job-id-${i}`}>{r.jobId ?? "N/A"}</strong></span>
+                        <span>Status: <strong data-testid={`debug-status-${i}`}>{r.status}</strong></span>
+                      </div>
+                      <div className="flex gap-4">
+                        <span>Imported: <strong data-testid={`debug-imported-at-${i}`}>{r.importedAt ? new Date(r.importedAt).toLocaleString() : "N/A"}</strong></span>
+                        <span>In Inbox: <strong data-testid={`debug-in-inbox-${i}`} className={r.verifiedInDb ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>{r.verifiedInDb ? "Yes (verified)" : "No"}</strong></span>
+                      </div>
+                      {r.existingJobId && <span>Existing Job ID: <strong>{r.existingJobId}</strong></span>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
