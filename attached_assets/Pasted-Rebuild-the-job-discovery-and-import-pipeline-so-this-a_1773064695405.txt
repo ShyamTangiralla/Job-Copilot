@@ -1,0 +1,154 @@
+Rebuild the job discovery and import pipeline so this app can reliably collect high-volume job listings and stop producing false duplicates.
+
+Current problems:
+- Discovery returns too few jobs
+- Many valid jobs are incorrectly marked as duplicates
+- Quick Capture bookmark often imports as duplicate or fails
+- Jobs sometimes show as imported in Import History but do not appear in Jobs Inbox
+- The system is not usable for mass applications in its current form
+
+Goal:
+Make this app reliable for bulk job intake first. Prioritize volume and correctness over advanced features.
+
+Rebuild the following parts.
+
+1. Discovery strategy
+Change discovery from a narrow filter to a bulk candidate collector.
+
+Search at least these role variations:
+- Data Analyst
+- Junior Data Analyst
+- Entry Level Data Analyst
+- Business Analyst
+- Business Data Analyst
+- Business Intelligence Analyst
+- BI Analyst
+- Reporting Analyst
+- Analytics Analyst
+- Product Analyst
+- Operations Analyst
+- Financial Analyst
+- Healthcare Data Analyst
+- Clinical Data Analyst
+- Marketing Analyst
+- Customer Insights Analyst
+- Data Quality Analyst
+- Data Operations Analyst
+- Analytics Associate
+- SQL Analyst
+
+Search across:
+- Google Jobs
+- Greenhouse
+- Lever
+- Workday
+- SmartRecruiters
+- Company Career Pages
+
+Scan multiple result pages per role/source combination.
+Target enough total discovery volume to produce 50 to 150 imported jobs per run when available.
+
+2. Freshness logic
+Current freshness logic is too strict.
+
+Change it to:
+- preferred: last 72 hours
+- fallback: last 7 days
+- skip jobs older than 7 days
+
+3. Duplicate detection fix
+Current duplicate detection is too aggressive and likely wrong.
+
+Rebuild duplicate detection with this logic:
+Primary duplicate key:
+- normalized application URL if present
+
+Fallback duplicate key only if URL is missing:
+- normalized company name + normalized job title + posted date
+
+Do NOT mark jobs as duplicates just because titles are similar.
+Do NOT mark jobs from different URLs as duplicates unless the normalized job ID clearly matches.
+
+Also add a visible duplicate reason field:
+- duplicate by URL
+- duplicate by title+company+date
+- duplicate by external job id
+
+4. Jobs Inbox sync fix
+Every job that is successfully imported must appear in Jobs Inbox.
+Fix any mismatch between Import History and Jobs Inbox.
+
+Add an import status state machine:
+- discovered
+- imported
+- duplicate
+- failed
+- hidden
+
+Only imported jobs should appear in Import History as imported.
+Imported jobs must always create a visible Jobs Inbox row.
+
+5. Quick Capture fix
+Rebuild the bookmark capture flow end-to-end.
+
+When I click the bookmark on a job page:
+- capture the exact current URL
+- pass it into Job Intake
+- prefill the input correctly
+- import it correctly
+- show explicit result:
+  - imported
+  - duplicate
+  - failed
+
+If duplicate, show the existing matching job record and the exact duplicate reason.
+
+6. Bulk intake mode
+Add a new mode in Job Intake called:
+- Bulk URL Import
+
+It should allow:
+- paste 20 to 200 job URLs at once
+- one URL per line
+- import all in batch
+- show per-row result:
+  - imported
+  - duplicate
+  - failed
+
+7. Inbox filters for mass apply
+Add easy filters in Jobs Inbox:
+- imported today
+- last 72 hours
+- last 7 days
+- score >= 60
+- score >= 70
+- primary role only
+- remote only
+
+8. Scoring thresholds
+Temporarily relax scoring so useful jobs are not buried.
+
+Use:
+- Apply Immediately: 85+
+- High Priority: 70 to 84
+- Medium Priority: 55 to 69
+- Low Priority: below 55
+
+9. Debug visibility
+Add a visible debug panel or import log showing:
+- total discovered
+- total imported
+- total duplicates
+- total failed
+- why duplicates happened
+- why failures happened
+
+10. Success criteria
+This rebuild is successful only if:
+- discovery returns far more jobs than before
+- false duplicate rate drops dramatically
+- Quick Capture works reliably
+- imported jobs always appear in Jobs Inbox
+- bulk URL import works for 20+ URLs at once
+- the app becomes usable for mass applications

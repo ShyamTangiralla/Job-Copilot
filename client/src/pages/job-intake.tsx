@@ -9,8 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Link2, Mail, List, Loader2, CheckCircle2, XCircle, AlertTriangle, Clock, ExternalLink } from "lucide-react";
-import type { ImportLog } from "@shared/schema";
+import { Link2, Mail, List, Loader2, CheckCircle2, XCircle, AlertTriangle, Clock, ExternalLink, LinkIcon, Copy } from "lucide-react";
+import type { ImportLog, Job } from "@shared/schema";
 
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
@@ -33,27 +33,67 @@ function SourceBadge({ sourceType }: { sourceType: string }) {
       return <Badge variant="outline"><Mail className="h-3 w-3 mr-1" />Email</Badge>;
     case "bulk":
       return <Badge variant="outline"><List className="h-3 w-3 mr-1" />Bulk</Badge>;
+    case "bulk-urls":
+      return <Badge variant="outline"><LinkIcon className="h-3 w-3 mr-1" />Bulk URLs</Badge>;
     default:
       return <Badge variant="outline">{sourceType}</Badge>;
   }
+}
+
+function DuplicateInfo({ reason, existingJob }: { reason?: string; existingJob?: Job }) {
+  if (!reason && !existingJob) return null;
+  return (
+    <div className="p-3 rounded border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950/30 text-sm space-y-1" data-testid="duplicate-info">
+      {reason && <p className="text-yellow-700 dark:text-yellow-300 font-medium">Reason: {reason}</p>}
+      {existingJob && (
+        <div className="text-muted-foreground">
+          <p>Existing: <span className="font-medium">{existingJob.title}</span> at {existingJob.company}</p>
+          <p className="text-xs">Status: {existingJob.status} · Score: {existingJob.applyPriorityScore}</p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function PasteUrlTab({ initialUrl }: { initialUrl?: string }) {
   const [url, setUrl] = useState(initialUrl || "");
   const { toast } = useToast();
   const autoImported = useRef(false);
+  const [duplicateInfo, setDuplicateInfo] = useState<{ reason?: string; existingJob?: Job } | null>(null);
 
   const mutation = useMutation({
-    mutationFn: (importUrl: string) => apiRequest("POST", "/api/intake/url", { url: importUrl }),
+    mutationFn: async (importUrl: string) => {
+      const res = await fetch("/api/intake/url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: importUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const err: any = new Error(data.message || "Import failed");
+        err.duplicate = data.duplicate;
+        err.duplicateReason = data.duplicateReason;
+        err.existingJob = data.existingJob;
+        throw err;
+      }
+      return data;
+    },
     onSuccess: (data: any) => {
-      toast({ title: "Job Imported", description: `${data.job.title} at ${data.job.company} added to Jobs Inbox` });
+      toast({ title: "Job Imported", description: `${data.job?.title || "Job"} at ${data.job?.company || "Company"} added to Jobs Inbox` });
       setUrl("");
+      setDuplicateInfo(null);
       queryClient.invalidateQueries({ queryKey: ["/api/intake/history"] });
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
     },
     onError: (err: any) => {
       const msg = err?.message || "Failed to import job";
-      toast({ title: msg.includes("duplicate") ? "Duplicate Job" : "Import Failed", description: msg, variant: msg.includes("duplicate") ? "default" : "destructive" });
+      if (err?.duplicate) {
+        setDuplicateInfo({ reason: err.duplicateReason, existingJob: err.existingJob });
+        toast({ title: "Duplicate Job", description: msg });
+      } else {
+        setDuplicateInfo(null);
+        toast({ title: "Import Failed", description: msg, variant: "destructive" });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/intake/history"] });
     },
   });
@@ -81,14 +121,98 @@ function PasteUrlTab({ initialUrl }: { initialUrl?: string }) {
             className="flex-1"
           />
           <Button
-            onClick={() => mutation.mutate(url)}
+            onClick={() => { setDuplicateInfo(null); mutation.mutate(url); }}
             disabled={!url.trim() || mutation.isPending}
             data-testid="button-import-url"
           >
             {mutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing...</> : "Import Job"}
           </Button>
         </div>
+        {duplicateInfo && <DuplicateInfo reason={duplicateInfo.reason} existingJob={duplicateInfo.existingJob} />}
         <p className="text-xs text-muted-foreground">Supported: LinkedIn, Indeed, Glassdoor, Lever, Greenhouse, Workday, iCIMS, SmartRecruiters, and most company career pages</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BulkUrlTab() {
+  const [urls, setUrls] = useState("");
+  const { toast } = useToast();
+  const [results, setResults] = useState<Array<{ url: string; title: string; company: string; status: string; error?: string; duplicateReason?: string; existingJobId?: number }> | null>(null);
+  const [processing, setProcessing] = useState(false);
+
+  const urlCount = urls.split("\n").filter(u => u.trim().startsWith("http")).length;
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/intake/bulk-urls", { urls });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "Bulk Import Complete", description: data.message });
+      setResults(data.results);
+      setUrls("");
+      setProcessing(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/intake/history"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Import Failed", description: err?.message || "Failed to process URLs", variant: "destructive" });
+      setProcessing(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/intake/history"] });
+    },
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><LinkIcon className="h-5 w-5" />Bulk URL Import</CardTitle>
+        <CardDescription>Paste 20-200 job URLs, one per line. Each URL will be scraped and imported with duplicate detection.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Textarea
+          placeholder={"Paste job URLs (one per line):\nhttps://jobs.lever.co/company/position-1\nhttps://boards.greenhouse.io/company/jobs/123456\nhttps://linkedin.com/jobs/view/789\nhttps://company.com/careers/data-analyst\n..."}
+          value={urls}
+          onChange={(e) => setUrls(e.target.value)}
+          rows={10}
+          data-testid="input-bulk-urls"
+        />
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">{urlCount} URL{urlCount !== 1 ? "s" : ""} detected</p>
+          <Button
+            onClick={() => { setProcessing(true); mutation.mutate(); }}
+            disabled={urlCount === 0 || mutation.isPending}
+            data-testid="button-import-bulk-urls"
+          >
+            {mutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Processing {urlCount} URLs...</> : `Import ${urlCount} URLs`}
+          </Button>
+        </div>
+
+        {results && results.length > 0 && (
+          <div className="space-y-2 mt-4" data-testid="bulk-url-import-results">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium">Import Results</h4>
+              <div className="flex gap-2 text-xs">
+                <Badge variant="default" className="bg-green-600">{results.filter(r => r.status === "success").length} imported</Badge>
+                <Badge variant="secondary">{results.filter(r => r.status === "duplicate").length} duplicates</Badge>
+                <Badge variant="destructive">{results.filter(r => r.status === "failed").length} failed</Badge>
+              </div>
+            </div>
+            <div className="max-h-80 overflow-y-auto space-y-1">
+              {results.map((r, i) => (
+                <div key={i} className="flex items-center justify-between p-2 rounded border text-sm" data-testid={`bulk-url-result-${i}`}>
+                  <div className="min-w-0 flex-1">
+                    <span className="font-medium truncate block">{r.title || r.url}</span>
+                    {r.company && <span className="text-muted-foreground text-xs">{r.company}</span>}
+                    {r.duplicateReason && <span className="text-yellow-600 dark:text-yellow-400 text-xs block">{r.duplicateReason}</span>}
+                    {r.error && <span className="text-destructive text-xs block">{r.error}</span>}
+                  </div>
+                  <StatusBadge status={r.status} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -97,10 +221,13 @@ function PasteUrlTab({ initialUrl }: { initialUrl?: string }) {
 function EmailAlertTab() {
   const [emailContent, setEmailContent] = useState("");
   const { toast } = useToast();
-  const [results, setResults] = useState<Array<{ title: string; company: string; status: string; error?: string }> | null>(null);
+  const [results, setResults] = useState<Array<{ title: string; company: string; status: string; error?: string; duplicateReason?: string }> | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/intake/email", { emailContent }),
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/intake/email", { emailContent });
+      return res.json();
+    },
     onSuccess: (data: any) => {
       toast({ title: "Email Processed", description: data.message });
       setResults(data.results);
@@ -144,6 +271,7 @@ function EmailAlertTab() {
                 <div>
                   <span className="font-medium">{r.title || "Unknown"}</span>
                   {r.company && <span className="text-muted-foreground"> at {r.company}</span>}
+                  {r.duplicateReason && <span className="text-yellow-600 dark:text-yellow-400 text-xs block">{r.duplicateReason}</span>}
                 </div>
                 <StatusBadge status={r.status} />
               </div>
@@ -158,10 +286,13 @@ function EmailAlertTab() {
 function BulkPasteTab() {
   const [content, setContent] = useState("");
   const { toast } = useToast();
-  const [results, setResults] = useState<Array<{ title: string; company: string; status: string; error?: string }> | null>(null);
+  const [results, setResults] = useState<Array<{ title: string; company: string; status: string; error?: string; duplicateReason?: string }> | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/intake/bulk", { content }),
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/intake/bulk", { content });
+      return res.json();
+    },
     onSuccess: (data: any) => {
       toast({ title: "Bulk Import Complete", description: data.message });
       setResults(data.results);
@@ -179,11 +310,11 @@ function BulkPasteTab() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><List className="h-5 w-5" />Bulk Paste Import</CardTitle>
-        <CardDescription>Paste multiple job links (one per line) or multiple job descriptions separated by blank lines.</CardDescription>
+        <CardDescription>Paste multiple job descriptions separated by blank lines.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <Textarea
-          placeholder={"Paste multiple job URLs (one per line):\nhttps://linkedin.com/jobs/view/123\nhttps://jobs.lever.co/company/456\nhttps://company.com/careers/position\n\nOr paste job descriptions separated by blank lines:\nData Analyst at Google\nMountain View, CA\nAnalyze data trends...\n\nHealthcare Analyst at UnitedHealth\nRemote\nSupport clinical operations..."}
+          placeholder={"Paste job descriptions separated by blank lines:\n\nData Analyst at Google\nMountain View, CA\nAnalyze data trends...\n\nHealthcare Analyst at UnitedHealth\nRemote\nSupport clinical operations..."}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           rows={8}
@@ -205,6 +336,7 @@ function BulkPasteTab() {
                 <div className="min-w-0 flex-1">
                   <span className="font-medium truncate block">{r.title || "Unknown"}</span>
                   {r.company && <span className="text-muted-foreground text-xs">{r.company}</span>}
+                  {r.duplicateReason && <span className="text-yellow-600 dark:text-yellow-400 text-xs block">{r.duplicateReason}</span>}
                   {r.error && <span className="text-destructive text-xs block">{r.error}</span>}
                 </div>
                 <StatusBadge status={r.status} />
@@ -270,13 +402,15 @@ export default function JobIntake() {
         </Card>
       </div>
 
-      <Tabs defaultValue="url">
-        <TabsList className="grid w-full grid-cols-3">
+      <Tabs defaultValue={queryUrl ? "url" : "url"}>
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="url" data-testid="tab-url"><Link2 className="h-4 w-4 mr-1" />Paste Link</TabsTrigger>
+          <TabsTrigger value="bulk-urls" data-testid="tab-bulk-urls"><LinkIcon className="h-4 w-4 mr-1" />Bulk URLs</TabsTrigger>
           <TabsTrigger value="email" data-testid="tab-email"><Mail className="h-4 w-4 mr-1" />Email Alert</TabsTrigger>
           <TabsTrigger value="bulk" data-testid="tab-bulk"><List className="h-4 w-4 mr-1" />Bulk Paste</TabsTrigger>
         </TabsList>
         <TabsContent value="url"><PasteUrlTab initialUrl={queryUrl} /></TabsContent>
+        <TabsContent value="bulk-urls"><BulkUrlTab /></TabsContent>
         <TabsContent value="email"><EmailAlertTab /></TabsContent>
         <TabsContent value="bulk"><BulkPasteTab /></TabsContent>
       </Tabs>
@@ -348,7 +482,10 @@ export default function JobIntake() {
                     <div key={log.id} className="flex items-center justify-between p-3 rounded border text-sm" data-testid={`import-log-${log.id}`}>
                       <div className="min-w-0 flex-1">
                         <div className="font-medium">{log.jobTitle || "Unknown"}</div>
-                        <div className="text-muted-foreground text-xs">{log.jobCompany}</div>
+                        <div className="text-muted-foreground text-xs">
+                          {log.jobCompany}
+                          {log.duplicateReason && <span className="text-yellow-600 dark:text-yellow-400"> · {log.duplicateReason}</span>}
+                        </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <SourceBadge sourceType={log.sourceType} />

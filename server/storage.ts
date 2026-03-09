@@ -13,7 +13,23 @@ import {
   ROLE_TYPES,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, ilike } from "drizzle-orm";
+import { eq, desc, and, ilike, sql } from "drizzle-orm";
+
+function normalizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    const trackingParams = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "ref", "fbclid", "gclid", "mc_cid", "mc_eid", "source", "trk", "trkCampaign", "trkInfo", "refId", "trackingId"];
+    for (const param of trackingParams) {
+      parsed.searchParams.delete(param);
+    }
+    let pathname = parsed.pathname.replace(/\/+$/, "");
+    if (!pathname) pathname = "/";
+    return `${parsed.hostname.toLowerCase()}${pathname}${parsed.search}`.toLowerCase();
+  } catch {
+    return url.toLowerCase().trim().replace(/\/+$/, "");
+  }
+}
 
 export interface IStorage {
   getProfile(): Promise<CandidateProfile | undefined>;
@@ -30,7 +46,7 @@ export interface IStorage {
   createJob(data: InsertJob): Promise<Job>;
   updateJob(id: number, data: Partial<InsertJob>): Promise<Job | undefined>;
   deleteJob(id: number): Promise<void>;
-  checkDuplicate(title: string, company: string, applyLink: string): Promise<Job | null>;
+  checkDuplicate(title: string, company: string, applyLink: string, datePosted?: string): Promise<{ isDuplicate: boolean; existingJob?: Job; reason?: string }>;
 
   getAnswers(): Promise<ApplicationAnswer[]>;
   createAnswer(data: InsertApplicationAnswer): Promise<ApplicationAnswer>;
@@ -159,18 +175,35 @@ export class DatabaseStorage implements IStorage {
     await db.delete(jobs).where(eq(jobs.id, id));
   }
 
-  async checkDuplicate(title: string, company: string, applyLink: string): Promise<Job | null> {
-    const conditions = [
-      and(ilike(jobs.title, title), ilike(jobs.company, company)),
-    ];
+  async checkDuplicate(title: string, company: string, applyLink: string, datePosted?: string): Promise<{ isDuplicate: boolean; existingJob?: Job; reason?: string }> {
     if (applyLink) {
-      conditions.push(eq(jobs.applyLink, applyLink));
+      const normalizedLink = normalizeUrl(applyLink);
+      const jobsWithLinks = await db.select().from(jobs).where(sql`${jobs.applyLink} != ''`);
+      const urlMatch = jobsWithLinks.find(j => normalizeUrl(j.applyLink) === normalizedLink);
+      if (urlMatch) {
+        return { isDuplicate: true, existingJob: urlMatch, reason: "duplicate by URL" };
+      }
+      return { isDuplicate: false };
     }
-    for (const cond of conditions) {
-      const rows = await db.select().from(jobs).where(cond!).limit(1);
-      if (rows.length > 0) return rows[0];
+
+    if (title && company) {
+      const normalizedTitle = title.toLowerCase().trim();
+      const normalizedCompany = company.toLowerCase().trim();
+      const rows = await db.select().from(jobs)
+        .where(and(
+          sql`lower(trim(${jobs.title})) = ${normalizedTitle}`,
+          sql`lower(trim(${jobs.company})) = ${normalizedCompany}`,
+        ))
+        .limit(5);
+      if (rows.length > 0 && datePosted) {
+        const dateMatch = rows.find(j => j.datePosted === datePosted);
+        if (dateMatch) {
+          return { isDuplicate: true, existingJob: dateMatch, reason: "duplicate by title+company+date" };
+        }
+      }
     }
-    return null;
+
+    return { isDuplicate: false };
   }
 
   async getAnswers(): Promise<ApplicationAnswer[]> {
@@ -231,12 +264,19 @@ export class DatabaseStorage implements IStorage {
     const rows = await db.select().from(settings).where(eq(settings.key, "discovery"));
     if (rows.length === 0) {
       return {
-        primaryRoles: ["Data Analyst", "Healthcare Data Analyst", "Business Analyst", "Financial Analyst", "BI Analyst"],
+        primaryRoles: [
+          "Data Analyst", "Junior Data Analyst", "Entry Level Data Analyst",
+          "Business Analyst", "Business Data Analyst", "Business Intelligence Analyst",
+          "BI Analyst", "Reporting Analyst", "Analytics Analyst", "Product Analyst",
+          "Operations Analyst", "Financial Analyst", "Healthcare Data Analyst",
+          "Clinical Data Analyst", "Marketing Analyst", "Customer Insights Analyst",
+          "Data Quality Analyst", "Data Operations Analyst", "Analytics Associate", "SQL Analyst",
+        ],
         secondaryRoles: ["Data Engineer", "Data Scientist"],
         preferredLocations: ["United States", "New York", "Remote"],
         workModes: ["Remote", "Hybrid", "Onsite"],
-        maxJobsPerScan: 50,
-        searchKeywords: ["SQL", "Python", "Tableau", "Power BI", "healthcare analytics"],
+        maxJobsPerScan: 300,
+        searchKeywords: ["SQL", "Python", "Tableau", "Power BI", "healthcare analytics", "Excel", "dashboards"],
         excludeKeywords: [],
         jobAgeFilter: "Last 7 days",
         sources: {
@@ -248,8 +288,8 @@ export class DatabaseStorage implements IStorage {
           emailAlerts: false,
         },
         scheduler: "Manual Only",
-        preferredFreshness: "Last 24 hours preferred, fallback to 48 hours",
-        dailyImportCap: 150,
+        preferredFreshness: "Last 72 hours preferred, fallback to 7 days",
+        dailyImportCap: 300,
       };
     }
     const val = rows[0].value as any;
@@ -431,10 +471,16 @@ export class DatabaseStorage implements IStorage {
       totalScore += w.freshness;
       explanations.push("Fresh 24h");
     } else if (freshnessLabel === "Fresh 48h") {
-      totalScore += Math.round(w.freshness * 0.6);
+      totalScore += Math.round(w.freshness * 0.8);
       explanations.push("Fresh 48h");
+    } else if (freshnessLabel === "Fresh 72h") {
+      totalScore += Math.round(w.freshness * 0.6);
+      explanations.push("Fresh 72h");
+    } else if (freshnessLabel === "Fresh 7d") {
+      totalScore += Math.round(w.freshness * 0.35);
+      explanations.push("Fresh 7d");
     } else {
-      totalScore += Math.round(w.freshness * 0.25);
+      totalScore += Math.round(w.freshness * 0.15);
     }
 
     const wm = workMode.toLowerCase();
@@ -478,9 +524,9 @@ export class DatabaseStorage implements IStorage {
     const clamped = Math.max(0, Math.min(100, totalScore));
 
     let label: string;
-    if (clamped >= 90) label = "Apply Immediately";
-    else if (clamped >= 75) label = "High Priority";
-    else if (clamped >= 60) label = "Medium Priority";
+    if (clamped >= 85) label = "Apply Immediately";
+    else if (clamped >= 70) label = "High Priority";
+    else if (clamped >= 55) label = "Medium Priority";
     else label = "Low Priority";
 
     return {

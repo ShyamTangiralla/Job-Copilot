@@ -65,6 +65,7 @@ export default function JobsInbox() {
   const [filterFreshness, setFilterFreshness] = useState("all");
   const [filterApplyPriority, setFilterApplyPriority] = useState("all");
   const [filterMinScore, setFilterMinScore] = useState("all");
+  const [quickFilter, setQuickFilter] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState<Job | null>(null);
@@ -120,6 +121,34 @@ export default function JobsInbox() {
   const sources = [...new Set(jobs?.map((j) => j.source).filter(Boolean) ?? [])];
 
   const filtered = (jobs ?? []).filter((job) => {
+    if (quickFilter) {
+      const now = new Date();
+      const created = job.createdAt ? new Date(job.createdAt) : null;
+      const hoursAgo = created ? (now.getTime() - created.getTime()) / (1000 * 60 * 60) : Infinity;
+      switch (quickFilter) {
+        case "today":
+          if (hoursAgo > 24) return false;
+          break;
+        case "72h":
+          if (hoursAgo > 72) return false;
+          break;
+        case "7d":
+          if (hoursAgo > 168) return false;
+          break;
+        case "score60":
+          if (job.applyPriorityScore < 60) return false;
+          break;
+        case "score70":
+          if (job.applyPriorityScore < 70) return false;
+          break;
+        case "primary":
+          if (!["Data Analyst", "Healthcare Data Analyst", "Business Analyst", "Financial Analyst", "BI Analyst"].includes(job.roleClassification)) return false;
+          break;
+        case "remote":
+          if (job.workMode !== "Remote") return false;
+          break;
+      }
+    }
     if (keyword) {
       const k = keyword.toLowerCase();
       if (
@@ -205,6 +234,16 @@ export default function JobsInbox() {
   };
 
   const activeFilterCount = [filterRole, filterStatus, filterWorkMode, filterSource, filterPriority, filterFreshness, filterApplyPriority, filterMinScore].filter((f) => f !== "all").length;
+
+  const quickFilters = [
+    { key: "today", label: "Imported Today" },
+    { key: "72h", label: "Last 72 Hours" },
+    { key: "7d", label: "Last 7 Days" },
+    { key: "score70", label: "Score ≥ 70" },
+    { key: "score60", label: "Score ≥ 60" },
+    { key: "primary", label: "Primary Role" },
+    { key: "remote", label: "Remote Only" },
+  ];
 
   return (
     <div className="p-6 space-y-4 max-w-7xl mx-auto">
@@ -346,6 +385,26 @@ export default function JobsInbox() {
             </form>
           </DialogContent>
         </Dialog>
+      </div>
+
+      <div className="flex items-center gap-1.5 flex-wrap" data-testid="quick-filters">
+        {quickFilters.map((qf) => (
+          <Button
+            key={qf.key}
+            variant={quickFilter === qf.key ? "default" : "outline"}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setQuickFilter(quickFilter === qf.key ? null : qf.key)}
+            data-testid={`quick-filter-${qf.key}`}
+          >
+            {qf.label}
+          </Button>
+        ))}
+        {quickFilter && (
+          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setQuickFilter(null)} data-testid="quick-filter-clear">
+            <X className="h-3 w-3 mr-1" />Clear
+          </Button>
+        )}
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">

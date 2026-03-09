@@ -220,8 +220,8 @@ export async function registerRoutes(
   app.post("/api/jobs/check-duplicate", async (req, res) => {
     try {
       const { title, company, applyLink } = req.body;
-      const duplicate = await storage.checkDuplicate(title || "", company || "", applyLink || "");
-      res.json({ isDuplicate: !!duplicate, existingJob: duplicate });
+      const dupCheck = await storage.checkDuplicate(title || "", company || "", applyLink || "");
+      res.json({ isDuplicate: dupCheck.isDuplicate, existingJob: dupCheck.existingJob, duplicateReason: dupCheck.reason });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
@@ -345,14 +345,8 @@ export async function registerRoutes(
     }
   });
 
-  async function checkDuplicate(title: string, company: string, applyLink: string): Promise<boolean> {
-    const allJobs = await storage.getJobs();
-    return allJobs.some((j) => {
-      const titleMatch = j.title.toLowerCase().trim() === title.toLowerCase().trim();
-      const companyMatch = j.company.toLowerCase().trim() === company.toLowerCase().trim();
-      const linkMatch = applyLink && j.applyLink && j.applyLink.toLowerCase().trim() === applyLink.toLowerCase().trim();
-      return (titleMatch && companyMatch) || (applyLink && linkMatch);
-    });
+  async function checkDuplicateHelper(title: string, company: string, applyLink: string, datePosted?: string) {
+    return storage.checkDuplicate(title, company, applyLink, datePosted);
   }
 
   app.post("/api/intake/url", async (req, res) => {
@@ -375,16 +369,23 @@ export async function registerRoutes(
         return res.status(400).json({ message: `Failed to fetch job from URL: ${err.message}` });
       }
 
-      const isDuplicate = await checkDuplicate(scraped.title, scraped.company, scraped.applyLink);
-      if (isDuplicate) {
+      const dupCheck = await checkDuplicateHelper(scraped.title, scraped.company, scraped.applyLink, scraped.datePosted);
+      if (dupCheck.isDuplicate) {
         await storage.createImportLog({
           sourceType: "url",
           sourceUrl: url,
           status: "duplicate",
           jobTitle: scraped.title,
           jobCompany: scraped.company,
+          duplicateReason: dupCheck.reason ?? "",
+          duplicateJobId: dupCheck.existingJob?.id,
         });
-        return res.status(409).json({ message: "This job already exists in your inbox", duplicate: true });
+        return res.status(409).json({
+          message: `This job already exists in your inbox (${dupCheck.reason})`,
+          duplicate: true,
+          duplicateReason: dupCheck.reason,
+          existingJob: dupCheck.existingJob,
+        });
       }
 
       const job = await storage.createJob({
@@ -447,15 +448,17 @@ export async function registerRoutes(
           const title = parsed_job.title || "Untitled Position";
           const company = parsed_job.company || "Unknown Company";
 
-          const isDuplicate = await checkDuplicate(title, company, parsed_job.applyLink);
-          if (isDuplicate) {
+          const dupCheck = await checkDuplicateHelper(title, company, parsed_job.applyLink);
+          if (dupCheck.isDuplicate) {
             await storage.createImportLog({
               sourceType: "email",
               status: "duplicate",
               jobTitle: title,
               jobCompany: company,
+              duplicateReason: dupCheck.reason ?? "",
+              duplicateJobId: dupCheck.existingJob?.id,
             });
-            results.push({ title, company, status: "duplicate" });
+            results.push({ title, company, status: "duplicate", duplicateReason: dupCheck.reason, existingJobId: dupCheck.existingJob?.id });
             continue;
           }
 
@@ -550,15 +553,17 @@ export async function registerRoutes(
           if (!title) title = "Untitled Position";
           if (!company) company = "Unknown Company";
 
-          const isDuplicate = await checkDuplicate(title, company, applyLink);
-          if (isDuplicate) {
+          const dupCheck = await checkDuplicateHelper(title, company, applyLink);
+          if (dupCheck.isDuplicate) {
             await storage.createImportLog({
               sourceType: "bulk",
               status: "duplicate",
               jobTitle: title,
               jobCompany: company,
+              duplicateReason: dupCheck.reason ?? "",
+              duplicateJobId: dupCheck.existingJob?.id,
             });
-            results.push({ title, company, status: "duplicate" });
+            results.push({ title, company, status: "duplicate", duplicateReason: dupCheck.reason, existingJobId: dupCheck.existingJob?.id });
             continue;
           }
 
@@ -592,6 +597,95 @@ export async function registerRoutes(
 
       res.json({
         message: `Processed ${results.length} items: ${imported} imported, ${duplicates} duplicates, ${failed} failed`,
+        results,
+        summary: { total: results.length, imported, duplicates, failed },
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/intake/bulk-urls", async (req, res) => {
+    try {
+      const { urls } = req.body;
+      if (!urls || typeof urls !== "string") {
+        return res.status(400).json({ message: "URLs are required (one per line)" });
+      }
+
+      const urlList = urls.split("\n").map((u: string) => u.trim()).filter((u: string) => u.length > 0 && (u.startsWith("http://") || u.startsWith("https://")));
+      if (urlList.length === 0) {
+        return res.status(400).json({ message: "No valid URLs found. Enter one URL per line." });
+      }
+      if (urlList.length > 200) {
+        return res.status(400).json({ message: "Maximum 200 URLs per batch" });
+      }
+
+      const results: Array<{ url: string; title: string; company: string; status: string; jobId?: number; error?: string; duplicateReason?: string; existingJobId?: number }> = [];
+
+      for (const url of urlList) {
+        try {
+          let scraped;
+          try {
+            scraped = await scrapeJobFromUrl(url);
+          } catch (err: any) {
+            await storage.createImportLog({
+              sourceType: "bulk-urls",
+              sourceUrl: url,
+              status: "failed",
+              errorMessage: err.message || "Failed to scrape URL",
+            });
+            results.push({ url, title: "", company: "", status: "failed", error: `Failed to scrape: ${err.message}` });
+            continue;
+          }
+
+          const dupCheck = await checkDuplicateHelper(scraped.title, scraped.company, scraped.applyLink, scraped.datePosted);
+          if (dupCheck.isDuplicate) {
+            await storage.createImportLog({
+              sourceType: "bulk-urls",
+              sourceUrl: url,
+              status: "duplicate",
+              jobTitle: scraped.title,
+              jobCompany: scraped.company,
+              duplicateReason: dupCheck.reason ?? "",
+              duplicateJobId: dupCheck.existingJob?.id,
+            });
+            results.push({ url, title: scraped.title, company: scraped.company, status: "duplicate", duplicateReason: dupCheck.reason, existingJobId: dupCheck.existingJob?.id });
+            continue;
+          }
+
+          const job = await storage.createJob({
+            title: scraped.title,
+            company: scraped.company,
+            source: scraped.source,
+            location: scraped.location,
+            workMode: scraped.workMode,
+            datePosted: scraped.datePosted,
+            description: scraped.description,
+            applyLink: scraped.applyLink,
+            status: "New",
+          });
+
+          await storage.createImportLog({
+            sourceType: "bulk-urls",
+            sourceUrl: url,
+            status: "success",
+            jobId: job.id,
+            jobTitle: job.title,
+            jobCompany: job.company,
+          });
+
+          results.push({ url, title: job.title, company: job.company, status: "success", jobId: job.id });
+        } catch (err: any) {
+          results.push({ url, title: "", company: "", status: "failed", error: err.message });
+        }
+      }
+
+      const imported = results.filter((r) => r.status === "success").length;
+      const duplicates = results.filter((r) => r.status === "duplicate").length;
+      const failed = results.filter((r) => r.status === "failed").length;
+
+      res.json({
+        message: `Processed ${results.length} URLs: ${imported} imported, ${duplicates} duplicates, ${failed} failed`,
         results,
         summary: { total: results.length, imported, duplicates, failed },
       });

@@ -410,6 +410,93 @@ export default function JobDiscovery() {
         </Card>
       </div>
 
+      <Collapsible>
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Import Debug Log</CardTitle>
+                  <CardDescription>Detailed breakdown of why jobs were duplicated or failed</CardDescription>
+                </div>
+                <Badge variant="outline" className="shrink-0">
+                  {results.filter(r => r.importResult === "duplicate").length} duplicates · {results.filter(r => r.importResult === "failed").length} failed
+                </Badge>
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4" data-testid="debug-panel">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+                <div className="p-2 rounded bg-muted/50">
+                  <div className="font-medium">{results.length}</div>
+                  <div className="text-xs text-muted-foreground">Total Discovered</div>
+                </div>
+                <div className="p-2 rounded bg-green-50 dark:bg-green-950/30">
+                  <div className="font-medium text-green-600">{results.filter(r => r.importResult === "imported").length}</div>
+                  <div className="text-xs text-muted-foreground">Imported</div>
+                </div>
+                <div className="p-2 rounded bg-yellow-50 dark:bg-yellow-950/30">
+                  <div className="font-medium text-yellow-600">{results.filter(r => r.importResult === "duplicate").length}</div>
+                  <div className="text-xs text-muted-foreground">Duplicates</div>
+                </div>
+                <div className="p-2 rounded bg-red-50 dark:bg-red-950/30">
+                  <div className="font-medium text-red-600">{results.filter(r => r.importResult === "failed").length}</div>
+                  <div className="text-xs text-muted-foreground">Failed</div>
+                </div>
+                <div className="p-2 rounded bg-orange-50 dark:bg-orange-950/30">
+                  <div className="font-medium text-orange-600">{results.filter(r => r.importResult === "skipped_old").length}</div>
+                  <div className="text-xs text-muted-foreground">Skipped (Old)</div>
+                </div>
+              </div>
+
+              {results.filter(r => r.importResult === "duplicate").length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Duplicate Reasons</h4>
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {(() => {
+                      const reasonCounts: Record<string, number> = {};
+                      results.filter(r => r.importResult === "duplicate").forEach(r => {
+                        const reason = r.duplicateReason || "unknown reason";
+                        reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+                      });
+                      return Object.entries(reasonCounts).map(([reason, count]) => (
+                        <div key={reason} className="flex items-center justify-between p-2 rounded border text-sm">
+                          <span className="text-yellow-700 dark:text-yellow-300">{reason}</span>
+                          <Badge variant="secondary">{count}</Badge>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                  <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                    {results.filter(r => r.importResult === "duplicate").slice(0, 20).map((r) => (
+                      <div key={r.id} className="flex items-center justify-between p-1.5 rounded bg-yellow-50 dark:bg-yellow-950/20 text-xs" data-testid={`debug-dup-${r.id}`}>
+                        <span className="truncate flex-1">{r.jobTitle} at {r.jobCompany}</span>
+                        <span className="text-yellow-600 dark:text-yellow-400 shrink-0 ml-2">{r.duplicateReason || "—"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {results.filter(r => r.importResult === "failed").length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Failure Reasons</h4>
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {results.filter(r => r.importResult === "failed").slice(0, 20).map((r) => (
+                      <div key={r.id} className="flex items-center justify-between p-1.5 rounded bg-red-50 dark:bg-red-950/20 text-xs" data-testid={`debug-fail-${r.id}`}>
+                        <span className="truncate flex-1">{r.jobTitle || "Unknown"} at {r.jobCompany || "Unknown"}</span>
+                        <span className="text-destructive shrink-0 ml-2 max-w-[200px] truncate">{r.errorMessage || "—"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Discovery History</CardTitle>
@@ -493,7 +580,14 @@ export default function JobDiscovery() {
                       </td>
                       <td className="py-2 pr-2 text-xs text-muted-foreground">{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}</td>
                       <td className="py-2 pr-2"><ResultsBadge result={r.importResult} /></td>
-                      <td className="py-2 pr-2">{r.isDuplicate ? <Badge variant="secondary">Yes</Badge> : <span className="text-muted-foreground">No</span>}</td>
+                      <td className="py-2 pr-2">
+                        {r.isDuplicate ? (
+                          <div>
+                            <Badge variant="secondary">Yes</Badge>
+                            {r.duplicateReason && <span className="text-xs text-yellow-600 dark:text-yellow-400 ml-1">{r.duplicateReason}</span>}
+                          </div>
+                        ) : <span className="text-muted-foreground">No</span>}
+                      </td>
                       <td className="py-2 pr-2">{r.classification || "—"}</td>
                       <td className="py-2 pr-2 max-w-[150px] truncate">{r.recommendedResume || "—"}</td>
                     </tr>

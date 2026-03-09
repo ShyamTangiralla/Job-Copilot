@@ -109,6 +109,8 @@ export const importLog = pgTable("import_log", {
   jobTitle: text("job_title").notNull().default(""),
   jobCompany: text("job_company").notNull().default(""),
   errorMessage: text("error_message").notNull().default(""),
+  duplicateReason: text("duplicate_reason").notNull().default(""),
+  duplicateJobId: integer("duplicate_job_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -149,6 +151,8 @@ export const discoveryResults = pgTable("discovery_results", {
   applyPriorityScore: integer("apply_priority_score").notNull().default(0),
   applyPriorityLabel: text("apply_priority_label").notNull().default(""),
   jobId: integer("job_id"),
+  duplicateReason: text("duplicate_reason").notNull().default(""),
+  duplicateJobId: integer("duplicate_job_id"),
   errorMessage: text("error_message").notNull().default(""),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -162,5 +166,5 @@ export const ROLE_TYPES = ["Data Analyst", "Healthcare Data Analyst", "Healthcar
 export const FIT_LABELS = ["Strong Match", "Possible Match", "Weak Match"] as const;
 export const WORK_MODES = ["Remote", "Hybrid", "Onsite"] as const;
 export const PRIORITIES = ["High", "Medium", "Low"] as const;
-export const FRESHNESS_LABELS = ["Fresh 24h", "Fresh 48h", "Unknown Date"] as const;
+export const FRESHNESS_LABELS = ["Fresh 24h", "Fresh 48h", "Fresh 72h", "Fresh 7d", "Unknown Date"] as const;
 export const APPLY_PRIORITY_LABELS = ["Apply Immediately", "High Priority", "Medium Priority", "Low Priority"] as const;

@@ -60,6 +60,8 @@ function computeFreshnessLabel(datePosted: string): string {
   const hoursAgo = (now.getTime() - posted.getTime()) / (1000 * 60 * 60);
   if (hoursAgo <= 24) return "Fresh 24h";
   if (hoursAgo <= 48) return "Fresh 48h";
+  if (hoursAgo <= 72) return "Fresh 72h";
+  if (hoursAgo <= 168) return "Fresh 7d";
   return "Too Old";
 }
 
@@ -127,6 +129,12 @@ async function searchGreenhouseJobs(roles: string[], config: DiscoveryConfig, si
     "datadog", "hashicorp", "gitlab", "mongodb", "elastic",
     "twilio", "cloudflare", "hubspot", "asana", "gusto",
     "plaid", "brex", "ramp", "scale", "anduril",
+    "airtable", "canva", "duolingo", "faire", "grammarly",
+    "loom", "miro", "nerdwallet", "pagerduty", "samsara",
+    "snyk", "toast", "vanta", "webflow", "zapier",
+    "tempus", "flatiron", "cerner", "veracyte", "waystar",
+    "aetion", "health-catalyst", "noom", "ro", "hims",
+    "devoted-health", "clover-health", "cityblock", "springhealth", "lyrahealth",
   ];
 
   for (const board of popularBoards) {
@@ -181,6 +189,11 @@ async function searchLeverJobs(roles: string[], config: DiscoveryConfig, signal:
     "doordash", "instacart", "pinterest", "snap", "reddit",
     "discord", "affirm", "chime", "sofi", "plaid",
     "opensea", "ripple", "dbt-labs", "fivetran", "census",
+    "komodohealth", "collectivehealth", "omadahealth", "livongo",
+    "included-health", "veeva", "doximity", "zocdoc", "healthgorilla",
+    "signifyhealth", "suki", "olive", "athenahealth", "allscripts",
+    "medidata", "iqvia", "cardinal-health", "mckesson",
+    "dropbox", "atlassian", "calendly", "deel", "lattice",
   ];
 
   for (const company of popularCompanies) {
@@ -369,14 +382,10 @@ export async function runDiscovery(): Promise<number> {
           skippedOld.push(job);
           return false;
         }
-        if (config.preferredFreshness === "Last 24 hours only" && job.freshnessLabel === "Fresh 48h") {
-          skippedOld.push(job);
-          return false;
-        }
         return true;
       });
 
-      const freshnessOrder: Record<string, number> = { "Fresh 24h": 0, "Fresh 48h": 1, "Unknown Date": 2 };
+      const freshnessOrder: Record<string, number> = { "Fresh 24h": 0, "Fresh 48h": 1, "Fresh 72h": 2, "Fresh 7d": 3, "Unknown Date": 4 };
       const matchOrder: Record<string, number> = { "Strong Match": 0, "Possible Match": 1, "Weak Match": 2 };
       allDiscoveredJobs.sort((a, b) => {
         const fa = freshnessOrder[a.freshnessLabel ?? "Unknown Date"] ?? 2;
@@ -420,8 +429,8 @@ export async function runDiscovery(): Promise<number> {
         if (signal.aborted) break;
 
         try {
-          const existing = await storage.checkDuplicate(discovered.title, discovered.company, discovered.applyLink);
-          if (existing) {
+          const dupCheck = await storage.checkDuplicate(discovered.title, discovered.company, discovered.applyLink, discovered.datePosted);
+          if (dupCheck.isDuplicate) {
             duplicates++;
             await storage.createDiscoveryResult({
               runId: run.id,
@@ -436,6 +445,8 @@ export async function runDiscovery(): Promise<number> {
               recommendedResume: "",
               matchScore: discovered.matchScore ?? "",
               freshnessLabel: discovered.freshnessLabel ?? "",
+              duplicateReason: dupCheck.reason ?? "",
+              duplicateJobId: dupCheck.existingJob?.id,
             });
             continue;
           }
@@ -452,10 +463,10 @@ export async function runDiscovery(): Promise<number> {
           });
 
           let statusFromScore: string;
-          if (priorityResult.applyPriorityScore >= 90) statusFromScore = "Ready to Apply";
+          if (priorityResult.applyPriorityScore >= 85) statusFromScore = "Ready to Apply";
           else if (discovered.matchScore === "Strong Match") statusFromScore = "Ready to Apply";
           else if (discovered.matchScore === "Possible Match") statusFromScore = "New";
-          else statusFromScore = "Skipped";
+          else statusFromScore = "New";
 
           const job = await storage.createJob({
             title: discovered.title,
