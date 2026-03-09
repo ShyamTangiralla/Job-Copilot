@@ -1,0 +1,123 @@
+Add a Resume Tailoring Assistant feature to Job Copilot.
+
+Goal:
+Use the selected master resume and the job description to create a lightly tailored resume version that improves ATS keyword alignment naturally, without fabricating anything.
+
+This feature should optimize the user's real resume for each job while preserving truthfulness, strong wording, and natural tone.
+
+Requirements:
+
+1. Core behavior
+For each job in Jobs Inbox or Job Detail:
+- allow selecting one master resume from Resume Vault
+- compare the selected resume against the job description
+- detect missing or weak keywords
+- generate a lightly tailored version of the resume
+
+2. Hard rules
+The tailoring assistant must:
+- never fabricate experience
+- never invent tools, platforms, or skills the user does not already know or cannot defend in an interview
+- never change metrics, percentages, counts, or numbers
+- never replace true achievements with fake ones
+- preserve the resume's overall structure as much as possible
+- make only strategic, natural wording improvements
+
+3. Keyword integration rules
+The assistant may add missing job-description keywords only when they can be integrated naturally into existing truthful content.
+
+The assistant should:
+- weave missing keywords into existing bullet points and skills naturally
+- strengthen wording using existing real experience
+- avoid weak wording such as "familiarity with", "exposure to", or "basic knowledge of"
+- avoid keyword stuffing
+- avoid robotic or generic phrasing
+
+The assistant should not:
+- force unrelated keywords into bullets
+- add fake achievements
+- create unrealistic expertise
+- rewrite the resume completely
+- turn every job into an artificial 100% match
+
+4. Tailoring scope
+The assistant may:
+- improve wording in the Skills section
+- improve wording in the Experience section
+- surface relevant existing keywords from the master resume
+- rephrase bullet points to better align with the job description
+- strengthen ATS match using truthful language
+- reorder or emphasize existing skills if useful
+
+5. Output sections
+For each tailoring run, generate:
+
+A. Keyword Gap Analysis
+Show:
+- keywords present in the job description
+- keywords already covered by the resume
+- keywords missing or weakly represented
+
+B. Suggested Resume Improvements
+Show:
+- old line -> improved line
+for each changed bullet or skill line
+
+C. Tailored Resume Draft
+Generate a clean tailored version of the selected resume
+
+D. Match Improvement Summary
+Show:
+- estimated ATS match before
+- estimated ATS match after
+- short explanation of what improved
+
+6. UI placement
+Add this feature to the Job Detail page with buttons like:
+- Analyze Resume Match
+- Suggest Resume Improvements
+- Generate Tailored Resume Draft
+
+Also allow access from Jobs Inbox for each row if simple to add.
+
+7. User control
+The user must be able to:
+- review suggested changes before accepting
+- copy the tailored resume draft
+- keep the original master resume unchanged
+- save the tailored version as a new resume entry in Resume Vault if desired
+
+8. Tailoring logic
+Prioritize improvements in this order:
+- skills explicitly mentioned in the job description
+- domain-specific keywords
+- tools and reporting terms
+- business language and stakeholder terms
+- role-specific phrasing
+
+Examples:
+- Data Analyst roles: SQL, Python, Tableau, Power BI, KPI reporting, dashboards
+- Healthcare Data Analyst roles: claims analytics, utilization, healthcare KPIs, compliance, regulatory reporting
+- Business Analyst roles: requirements gathering, stakeholder collaboration, process improvement, documentation
+- Financial Analyst roles: forecasting, variance analysis, budgeting, financial reporting
+
+9. Tone and style
+The tailored resume must be:
+- professional
+- ATS-friendly
+- concise
+- natural
+- strong in wording
+- not generic
+- not robotic
+- not fluffy
+
+Use strong action-oriented wording while preserving truth and realism.
+
+10. Success criteria
+This feature is successful only if:
+- it improves ATS alignment naturally
+- it keeps all content truthful
+- it does not alter real metrics
+- it saves the user time compared to manual tailoring
+- it produces a tailored draft that feels personal and role-specific
