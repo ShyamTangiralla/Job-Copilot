@@ -44,6 +44,7 @@ import {
   ArrowRight,
   Trash2,
   History,
+  Pencil,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -168,6 +169,8 @@ function ResumeTailoringAssistant({ job, resumes }: { job: Job; resumes: Resume[
   const [activeTab, setActiveTab] = useState<"keywords" | "improvements" | "draft" | "summary">("keywords");
   const [showKeywordsExpanded, setShowKeywordsExpanded] = useState(false);
   const [saveName, setSaveName] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedDraft, setEditedDraft] = useState("");
 
   const activeResumes = resumes.filter(r => r.active && r.plainText && r.plainText.trim().length > 0);
 
@@ -195,6 +198,8 @@ function ResumeTailoringAssistant({ job, resumes }: { job: Job; resumes: Resume[
     onSuccess: (data: TailoringResult) => {
       setResult(data);
       setActiveTab("keywords");
+      setIsEditing(false);
+      setEditedDraft("");
       toast({ title: "Analysis Complete", description: data.improvementSummary });
     },
     onError: (err: any) => {
@@ -202,14 +207,17 @@ function ResumeTailoringAssistant({ job, resumes }: { job: Job; resumes: Resume[
     },
   });
 
+  const currentDraft = isEditing || editedDraft ? editedDraft : result?.tailoredText || "";
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!result) throw new Error("No analysis result");
+      const textToSave = editedDraft || result.tailoredText;
       const res = await apiRequest("POST", "/api/tailoring/save", {
         jobId: job.id,
         resumeId: parseInt(selectedResumeId),
         originalText: activeResumes.find(r => r.id === parseInt(selectedResumeId))?.plainText || "",
-        tailoredText: result.tailoredText,
+        tailoredText: textToSave,
         keywordAnalysis: result.keywordAnalysis,
         improvements: result.improvements,
         matchBefore: result.matchBefore,
@@ -231,8 +239,9 @@ function ResumeTailoringAssistant({ job, resumes }: { job: Job; resumes: Resume[
     mutationFn: async () => {
       if (!result) throw new Error("No result");
       const selectedResume = activeResumes.find(r => r.id === parseInt(selectedResumeId));
+      const textToSave = editedDraft || result.tailoredText;
       const res = await apiRequest("POST", "/api/tailoring/save-as-resume", {
-        tailoredText: result.tailoredText,
+        tailoredText: textToSave,
         name: saveName || `${selectedResume?.name || "Resume"} - Tailored for ${job.company}`,
         roleType: selectedResume?.roleType || job.roleClassification || "Data Analyst",
       });
@@ -249,8 +258,9 @@ function ResumeTailoringAssistant({ job, resumes }: { job: Job; resumes: Resume[
   });
 
   const copyToClipboard = () => {
-    if (result?.tailoredText) {
-      navigator.clipboard.writeText(result.tailoredText);
+    const text = editedDraft || result?.tailoredText;
+    if (text) {
+      navigator.clipboard.writeText(text);
       toast({ title: "Copied", description: "Tailored resume copied to clipboard." });
     }
   };
@@ -434,10 +444,36 @@ function ResumeTailoringAssistant({ job, resumes }: { job: Job; resumes: Resume[
 
             {activeTab === "draft" && (
               <div className="space-y-2">
-                <div className="flex gap-1">
+                <div className="flex gap-1 flex-wrap">
+                  {!isEditing ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="text-xs h-7"
+                      onClick={() => {
+                        setEditedDraft(editedDraft || result.tailoredText);
+                        setIsEditing(true);
+                      }}
+                      data-testid="button-edit-draft"
+                    >
+                      <Pencil className="h-3 w-3 mr-1" />
+                      Edit Draft
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="text-xs h-7"
+                      onClick={() => setIsEditing(false)}
+                      data-testid="button-save-edited-draft"
+                    >
+                      <Save className="h-3 w-3 mr-1" />
+                      Done Editing
+                    </Button>
+                  )}
                   <Button variant="secondary" size="sm" className="text-xs h-7" onClick={copyToClipboard} data-testid="button-copy-draft">
                     <Copy className="h-3 w-3 mr-1" />
-                    Copy
+                    Copy Final
                   </Button>
                   <Button
                     variant="secondary"
@@ -451,18 +487,30 @@ function ResumeTailoringAssistant({ job, resumes }: { job: Job; resumes: Resume[
                     Save to Job
                   </Button>
                 </div>
-                <div className="border rounded p-2 max-h-80 overflow-y-auto">
-                  <pre className="text-xs whitespace-pre-wrap font-mono leading-relaxed" data-testid="text-tailored-draft">
-                    {result.tailoredText}
-                  </pre>
-                </div>
+                {isEditing ? (
+                  <textarea
+                    value={editedDraft}
+                    onChange={e => setEditedDraft(e.target.value)}
+                    className="w-full border rounded p-2 text-xs font-mono leading-relaxed min-h-[320px] max-h-[500px] resize-y bg-background"
+                    data-testid="textarea-edit-draft"
+                  />
+                ) : (
+                  <div className="border rounded p-2 max-h-80 overflow-y-auto">
+                    <pre className="text-xs whitespace-pre-wrap font-mono leading-relaxed" data-testid="text-tailored-draft">
+                      {editedDraft || result.tailoredText}
+                    </pre>
+                  </div>
+                )}
+                {editedDraft && editedDraft !== result.tailoredText && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">Draft has been manually edited</p>
+                )}
                 <div className="space-y-1.5 pt-1 border-t">
                   <Label className="text-xs text-muted-foreground">Save as new resume in Vault</Label>
                   <div className="flex gap-1">
                     <Input
                       value={saveName}
                       onChange={e => setSaveName(e.target.value)}
-                      placeholder={`${result.resumeName} - ${job.company}`}
+                      placeholder={`Resume - Tailored for ${job.company}`}
                       className="text-xs h-8"
                       data-testid="input-save-resume-name"
                     />

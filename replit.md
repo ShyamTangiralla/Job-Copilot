@@ -144,8 +144,16 @@ Features:
 - **Keyword Gap Analysis**: Extracts keywords from job description and resume, identifies matched/missing/weak keywords
 - **Suggested Improvements**: Rule-based bullet point improvements that naturally integrate missing keywords
 - **Tailored Draft**: Modified resume with keywords woven in and weak phrasing strengthened
+- **Manual Edit Mode**: Edit the tailored draft inline before saving or copying (Edit Draft / Done Editing toggle)
 - **ATS Match Score**: Before/after percentage based on keyword and bigram overlap
 - **Save Options**: Copy to clipboard, save to job history, or save as new resume in vault
+- **Tailoring History**: View/copy/delete past tailoring runs per job
+
+Protection Rules (enforced by the engine):
+- **Locked sections**: Education, Certifications, Achievements, Awards, Publications — never modified
+- **Protected lines**: Date ranges (MM/YYYY – MM/YYYY, YYYY – YYYY, month patterns), section headers, company names, job titles, degree names, university names
+- **Editable only**: Bullet points in Experience/Projects, Skills section lines (comma/pipe/colon-separated or bullets)
+- Date detection: any line matching date range patterns is automatically locked
 
 Resume Writing Style Rules (enforced by the engine):
 - 6 bullets per experience section: 3 strong action verbs (Led, Built, Designed, etc.), 3 neutral verbs (Analyzed, Conducted, Supported, etc.)

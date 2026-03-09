@@ -334,6 +334,73 @@ function suggestBulletImprovement(
   };
 }
 
+const DATE_PATTERNS = [
+  /\d{1,2}\/\d{4}\s*[–\-—]\s*\d{1,2}\/\d{4}/,
+  /\d{1,2}\/\d{4}\s*[–\-—]\s*(present|current)/i,
+  /\d{4}\s*[–\-—]\s*\d{4}/,
+  /\d{4}\s*[–\-—]\s*(present|current)/i,
+  /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{4}\s*[–\-—]/i,
+  /[–\-—]\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{4}/i,
+  /^\s*\d{1,2}\/\d{2,4}\s*$/,
+];
+
+function isDateLine(line: string): boolean {
+  const trimmed = line.trim();
+  for (const pattern of DATE_PATTERNS) {
+    if (pattern.test(trimmed)) return true;
+  }
+  return false;
+}
+
+function isProtectedLine(line: string, sectionName: string): boolean {
+  const trimmed = line.trim();
+  if (trimmed.length === 0) return true;
+  if (isDateLine(line)) return true;
+  if (trimmed.length < 10) return true;
+
+  const sectionHeaders = [
+    "summary", "objective", "professional summary", "career summary",
+    "experience", "work experience", "professional experience", "employment",
+    "education", "academic", "certifications", "certificates",
+    "skills", "technical skills", "core competencies", "competencies",
+    "projects", "achievements", "awards", "publications",
+    "volunteer", "leadership", "activities",
+  ];
+  const lowerTrimmed = trimmed.toLowerCase().replace(/[:\-_|]/g, "").trim();
+  if (sectionHeaders.some(h => lowerTrimmed === h || (lowerTrimmed.startsWith(h) && trimmed.length < 50))) {
+    return true;
+  }
+
+  const isBullet = /^[\-•▪▸►◦\*]\s/.test(trimmed) || /^\d+[\.\)]\s/.test(trimmed);
+  const isSkillsSection = ["skills", "technical skills", "core competencies", "competencies"].includes(sectionName);
+  const isExperienceSection = ["experience", "work experience", "professional experience", "employment"].includes(sectionName);
+  const isProjectsSection = sectionName === "projects";
+
+  if (isSkillsSection) {
+    if (trimmed.includes(",") || trimmed.includes("|") || trimmed.includes(":")) return false;
+    if (isBullet) return false;
+    return true;
+  }
+
+  if (isExperienceSection || isProjectsSection) {
+    if (isBullet) return false;
+    return true;
+  }
+
+  return true;
+}
+
+const LOCKED_SECTIONS = [
+  "education", "academic", "certifications", "certificates", "header",
+  "achievements", "awards", "publications", "volunteer", "leadership", "activities",
+];
+
+const EDITABLE_SECTIONS = [
+  "experience", "work experience", "professional experience", "employment",
+  "skills", "technical skills", "core competencies", "competencies",
+  "projects", "summary", "professional summary",
+];
+
 export function analyzeAndTailor(
   resumeText: string,
   jobDescription: string,
@@ -387,18 +454,16 @@ export function analyzeAndTailor(
   const addedKeywords = new Set<string>();
 
   for (const section of sections) {
-    if (!["experience", "work experience", "professional experience", "employment",
-         "skills", "technical skills", "core competencies", "competencies",
-         "projects", "summary", "professional summary"].includes(section.name)) {
-      continue;
-    }
+    if (LOCKED_SECTIONS.includes(section.name)) continue;
+    if (!EDITABLE_SECTIONS.includes(section.name)) continue;
 
     const sectionLines = lines.slice(section.startIdx, section.endIdx + 1);
     for (let i = 0; i < sectionLines.length; i++) {
       const remainingMissing = uniquePrioritized.filter(k => !addedKeywords.has(k));
       const lineIdx = section.startIdx + i;
       const line = sectionLines[i];
-      if (line.trim().length < 10) continue;
+
+      if (isProtectedLine(line, section.name)) continue;
 
       const result = suggestBulletImprovement(line, remainingMissing, section.name);
       if (result) {

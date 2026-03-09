@@ -1,0 +1,75 @@
+Fix a bug in the Resume Tailoring Assistant and add manual edit support.
+
+Current problem:
+The tailoring engine is incorrectly editing education date lines and other protected resume fields.
+
+Example bug:
+Lines like "01/2024 – 08/2025" and "07/2016 – 06/2019" are education date ranges, but the assistant is treating them like editable skill lines and injecting keywords into them.
+
+This is wrong.
+
+Fix the tailoring logic with these strict protection rules:
+
+1. Protected fields
+The tailoring assistant must never edit:
+- education dates
+- degree names
+- university / college names
+- section headers
+- company names
+- job titles
+- project titles
+- certifications
+- original metrics / numbers
+- date ranges in any section
+
+2. Editable fields only
+The tailoring assistant may only edit:
+- bullet points in the Experience section
+- bullet points in the Projects section
+- the Skills section text only when appropriate
+
+3. Date detection rule
+Any line containing a date range such as:
+- MM/YYYY – MM/YYYY
+- YYYY – YYYY
+- month/year patterns
+must be treated as locked and non-editable.
+
+4. Education lock rule
+The entire Education section should be read-only for tailoring.
+It may be analyzed for context, but never modified.
+
+5. Safer keyword integration
+Only integrate keywords into:
+- existing experience bullets
+- existing project bullets
+- appropriate skill lines
+
+Never insert keywords into isolated short lines, date lines, or metadata lines.
+
+6. Preserve formatting
+Do not break the resume structure.
+Do not move dates into skills.
+Do not treat dates as content bullets.
+
+7. Add manual edit mode
+After generating the tailored resume draft, allow the user to manually edit the draft in the UI before saving or copying.
+
+Requirements for manual edit mode:
+- make the tailored draft text editable
+- allow inline editing or text-area editing
+- add buttons:
+  - Edit Draft
+  - Save Edited Draft
+  - Copy Final Draft
+- keep the original master resume unchanged
+- allow the edited version to be saved as a new resume entry in Resume Vault
+- preserve formatting as much as possible
+
+8. Retest
+After fixing this bug, retest the Resume Tailoring Assistant on one job and confirm that:
+- education dates remain unchanged
+- only valid bullets or skills are edited
+- ATS score still improves naturally
+- the user can manually edit the tailored draft before saving
