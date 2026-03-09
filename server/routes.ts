@@ -7,6 +7,7 @@ import { storage } from "./storage";
 import { insertJobSchema, insertResumeSchema, insertApplicationAnswerSchema, insertCandidateProfileSchema } from "@shared/schema";
 import { scrapeJobFromUrl, parseEmailContent, parseBulkInput } from "./scraper";
 import { runDiscovery, stopDiscovery, isDiscoveryRunning } from "./discovery";
+import { analyzeAndTailor } from "./tailoring";
 
 const uploadsDir = path.join(process.cwd(), "uploads", "resumes");
 if (!fs.existsSync(uploadsDir)) {
@@ -808,6 +809,135 @@ export async function registerRoutes(
       const runId = req.query.runId ? parseInt(req.query.runId as string) : undefined;
       const results = runId ? await storage.getDiscoveryResults(runId) : await storage.getRecentDiscoveryResults();
       res.json(results);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/tailoring/analyze", async (req, res) => {
+    try {
+      const { jobId, resumeId } = req.body;
+      if (!jobId || !resumeId) {
+        return res.status(400).json({ message: "jobId and resumeId are required" });
+      }
+      const parsedJobId = parseInt(jobId);
+      const parsedResumeId = parseInt(resumeId);
+      if (isNaN(parsedJobId) || isNaN(parsedResumeId)) {
+        return res.status(400).json({ message: "Invalid jobId or resumeId" });
+      }
+
+      const job = await storage.getJob(parsedJobId);
+      if (!job) return res.status(404).json({ message: "Job not found" });
+
+      const resume = await storage.getResume(parsedResumeId);
+      if (!resume) return res.status(404).json({ message: "Resume not found" });
+
+      if (!resume.plainText || resume.plainText.trim().length === 0) {
+        return res.status(400).json({ message: "Resume has no text content. Please add plain text to your resume in the Resume Vault." });
+      }
+
+      if (!job.description || job.description.trim().length === 0) {
+        return res.status(400).json({ message: "Job has no description to analyze against." });
+      }
+
+      const result = analyzeAndTailor(resume.plainText, job.description, job.roleClassification);
+
+      res.json({
+        keywordAnalysis: result.keywordAnalysis,
+        improvements: result.improvements,
+        tailoredText: result.tailoredText,
+        matchBefore: result.matchBefore,
+        matchAfter: result.matchAfter,
+        improvementSummary: result.improvementSummary,
+        resumeName: resume.name,
+        jobTitle: job.title,
+        jobCompany: job.company,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/tailoring/save", async (req, res) => {
+    try {
+      const { jobId, resumeId, originalText, tailoredText, keywordAnalysis, improvements, matchBefore, matchAfter, improvementSummary } = req.body;
+
+      if (!jobId || !resumeId || !tailoredText) {
+        return res.status(400).json({ message: "jobId, resumeId, and tailoredText are required" });
+      }
+      const parsedJobId = parseInt(jobId);
+      const parsedResumeId = parseInt(resumeId);
+      if (isNaN(parsedJobId) || isNaN(parsedResumeId)) {
+        return res.status(400).json({ message: "Invalid jobId or resumeId" });
+      }
+
+      const job = await storage.getJob(parsedJobId);
+      if (!job) return res.status(404).json({ message: "Job not found" });
+      const resume = await storage.getResume(parsedResumeId);
+      if (!resume) return res.status(404).json({ message: "Resume not found" });
+
+      const tailored = await storage.createTailoredResume({
+        jobId: parsedJobId,
+        resumeId: parsedResumeId,
+        originalText: originalText || "",
+        tailoredText,
+        keywordAnalysis: keywordAnalysis || {},
+        improvements: improvements || [],
+        matchBefore: matchBefore || 0,
+        matchAfter: matchAfter || 0,
+        improvementSummary: improvementSummary || "",
+      });
+
+      await storage.logActivity({
+        jobId: parsedJobId,
+        action: "Resume tailored",
+        details: `Tailored resume saved (match: ${matchBefore}% → ${matchAfter}%)`,
+      });
+
+      res.json(tailored);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/tailoring/save-as-resume", async (req, res) => {
+    try {
+      const { tailoredText, name, roleType, originalResumeId } = req.body;
+
+      if (!tailoredText || !name) {
+        return res.status(400).json({ message: "tailoredText and name are required" });
+      }
+
+      const resume = await storage.createResume({
+        name,
+        roleType: roleType || "Data Analyst",
+        plainText: tailoredText,
+        active: true,
+      });
+
+      res.json(resume);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/tailoring/history/:jobId", async (req, res) => {
+    try {
+      const jobId = parseInt(req.params.jobId);
+      if (isNaN(jobId)) return res.status(400).json({ message: "Invalid job ID" });
+      const history = await storage.getTailoredResumes(jobId);
+      res.json(history);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/tailoring/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      await storage.deleteTailoredResume(id);
+      res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

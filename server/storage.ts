@@ -8,8 +8,9 @@ import {
   type ImportLog, type InsertImportLog,
   type DiscoveryRun, type InsertDiscoveryRun,
   type DiscoveryResult, type InsertDiscoveryResult,
+  type TailoredResume, type InsertTailoredResume,
   candidateProfile, resumes, jobs, applicationAnswers, activityLog, settings, importLog,
-  discoveryRuns, discoveryResults,
+  discoveryRuns, discoveryResults, tailoredResumes,
   ROLE_TYPES,
 } from "@shared/schema";
 import { db } from "./db";
@@ -73,6 +74,11 @@ export interface IStorage {
   getDiscoveryResults(runId: number): Promise<DiscoveryResult[]>;
   getRecentDiscoveryResults(): Promise<DiscoveryResult[]>;
   recalculateAllPriorityScores(): Promise<number>;
+
+  createTailoredResume(data: InsertTailoredResume): Promise<TailoredResume>;
+  getTailoredResumes(jobId: number): Promise<TailoredResume[]>;
+  getTailoredResume(id: number): Promise<TailoredResume | undefined>;
+  deleteTailoredResume(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -357,6 +363,24 @@ export class DatabaseStorage implements IStorage {
 
   async getRecentDiscoveryResults(): Promise<DiscoveryResult[]> {
     return db.select().from(discoveryResults).orderBy(desc(discoveryResults.createdAt)).limit(50);
+  }
+
+  async createTailoredResume(data: InsertTailoredResume): Promise<TailoredResume> {
+    const [created] = await db.insert(tailoredResumes).values(data).returning();
+    return created;
+  }
+
+  async getTailoredResumes(jobId: number): Promise<TailoredResume[]> {
+    return db.select().from(tailoredResumes).where(eq(tailoredResumes.jobId, jobId)).orderBy(desc(tailoredResumes.createdAt));
+  }
+
+  async getTailoredResume(id: number): Promise<TailoredResume | undefined> {
+    const rows = await db.select().from(tailoredResumes).where(eq(tailoredResumes.id, id));
+    return rows[0];
+  }
+
+  async deleteTailoredResume(id: number): Promise<void> {
+    await db.delete(tailoredResumes).where(eq(tailoredResumes.id, id));
   }
 
   classifyAndScore(data: InsertJob, weights?: { roleMatch: number; freshness: number; experienceLevel: number; keywordMatch: number; location: number; sourceQuality: number; resumeMatch: number }): InsertJob & { matchScoreNumeric: number } {

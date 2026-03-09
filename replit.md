@@ -20,6 +20,7 @@ This app helps manage the job application workflow: classify jobs by role type, 
 - `resumes` - Master resumes tagged by role type with file upload support (fileName, filePath, fileType columns)
 - `jobs` - Job listings with classification, fit scoring, status tracking, priority (High/Medium/Low), and follow-up dates
 - `application_answers` - Standard Q&A pairs for common application questions
+- `tailored_resumes` - Tailored resume versions per job (jobId, resumeId, originalText, tailoredText, keywordAnalysis, improvements, matchBefore, matchAfter, improvementSummary)
 - `activity_log` - Tracks status changes and actions
 - `settings` - Configurable role categories, sources, and statuses (stored as JSONB); also stores discovery settings under key "discovery" and scoring weights under key "scoringWeights"
 - `import_log` - Tracks job import history (sourceType, sourceUrl, status, jobId, jobTitle, jobCompany, errorMessage, duplicateReason, duplicateJobId)
@@ -33,7 +34,7 @@ This app helps manage the job application workflow: classify jobs by role type, 
 3. **Job Intake** (`/intake`) - Import jobs via URL scraping, bulk URL import (20-200 URLs), email alert parsing, or bulk paste; import history with duplicate reason display
 4. **Quick Capture** (`/quick-capture`) - Bookmarklet helper page; captures browser URL and opens Job Intake with it prefilled; shows import/duplicate/fail result with duplicate reason
 5. **Jobs Inbox** (`/jobs`) - Filterable job table with Quick Add, quick filters for mass apply (Imported Today, Last 72h, Last 7d, Score ≥ 60, Score ≥ 70, Primary Role, Remote Only)
-6. **Job Detail** (`/jobs/:id`) - Full job view with status buttons, priority selector, follow-up date, missing info warnings, notes, recommended resume
+6. **Job Detail** (`/jobs/:id`) - Full job view with status buttons, priority selector, follow-up date, missing info warnings, notes, recommended resume, Resume Tailoring Assistant
 7. **Resume Vault** (`/resumes`) - CRUD for master resumes with active/inactive toggle
 8. **Candidate Profile** (`/profile`) - Personal info form and standard application answers
 9. **Tracker** (`/tracker`) - Kanban board (drag-and-drop), Table view, Analytics tab, CSV export
@@ -129,6 +130,32 @@ Auto-status: Score ≥85 → "Ready to Apply" from discovery. Does NOT auto-subm
 - `PATCH/DELETE /api/answers/:id` - Update/delete answer
 - `GET /api/activity` - Get activity log
 - `GET/PATCH /api/settings` - Get/update settings
+- `POST /api/tailoring/analyze` - Analyze resume against job description (keyword gaps, suggestions, tailored draft)
+- `POST /api/tailoring/save` - Save tailored resume to job history
+- `POST /api/tailoring/save-as-resume` - Save tailored version as new resume in vault
+- `GET /api/tailoring/history/:jobId` - Get tailoring history for a job
+- `DELETE /api/tailoring/:id` - Delete a tailored resume
+
+## Resume Tailoring Assistant
+
+Algorithmic resume tailoring engine on the Job Detail page. Compares a selected master resume against the job description to produce keyword gap analysis, suggested improvements, and a tailored draft.
+
+Features:
+- **Keyword Gap Analysis**: Extracts keywords from job description and resume, identifies matched/missing/weak keywords
+- **Suggested Improvements**: Rule-based bullet point improvements that naturally integrate missing keywords
+- **Tailored Draft**: Modified resume with keywords woven in and weak phrasing strengthened
+- **ATS Match Score**: Before/after percentage based on keyword and bigram overlap
+- **Save Options**: Copy to clipboard, save to job history, or save as new resume in vault
+
+Resume Writing Style Rules (enforced by the engine):
+- 6 bullets per experience section: 3 strong action verbs (Led, Built, Designed, etc.), 3 neutral verbs (Analyzed, Conducted, Supported, etc.)
+- Professional, natural, human-sounding tone; no buzzwords or generic phrases
+- Keywords only when they fit naturally within real experience
+- Preserve existing resume format, section order, layout
+- One page, ~550-700 words
+- Never fabricate experience, invent tools, change metrics, or exaggerate
+
+Keyword databases by role: Data Analyst, Healthcare Data Analyst, Business Analyst, Financial Analyst
 
 ## Key Files
 
@@ -138,6 +165,7 @@ Auto-status: Score ≥85 → "Ready to Apply" from discovery. Does NOT auto-subm
 - `server/routes.ts` - API endpoints
 - `server/scraper.ts` - URL scraping (cheerio), email parsing, bulk input parsing
 - `server/discovery.ts` - Job discovery engine (Greenhouse, Lever, Google Jobs search)
+- `server/tailoring.ts` - Resume tailoring engine (keyword extraction, gap analysis, rule-based suggestions, ATS scoring)
 - `client/src/pages/` - All page components
 
 ## Constants
