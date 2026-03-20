@@ -66,7 +66,7 @@ export default function JobsInbox() {
   const [filterApplyPriority, setFilterApplyPriority] = useState("all");
   const [filterMinScore, setFilterMinScore] = useState("all");
   const [quickFilter, setQuickFilter] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<"score" | "imported">("score");
+  const [sortBy, setSortBy] = useState<"score" | "imported" | "ats">("score");
   const [showFilters, setShowFilters] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState<Job | null>(null);
@@ -173,6 +173,9 @@ export default function JobsInbox() {
       const aTime = a.importedAt ? new Date(a.importedAt).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
       const bTime = b.importedAt ? new Date(b.importedAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
       return bTime - aTime;
+    }
+    if (sortBy === "ats") {
+      return (b.atsScore ?? 0) - (a.atsScore ?? 0);
     }
     const scoreDiff = (b.applyPriorityScore ?? 0) - (a.applyPriorityScore ?? 0);
     if (scoreDiff !== 0) return scoreDiff;
@@ -431,6 +434,15 @@ export default function JobsInbox() {
           >
             Newest First
           </Button>
+          <Button
+            variant={sortBy === "ats" ? "default" : "outline"}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setSortBy("ats")}
+            data-testid="sort-by-ats"
+          >
+            ATS Score
+          </Button>
         </div>
       </div>
 
@@ -605,6 +617,13 @@ export default function JobsInbox() {
                     <TableHead>Classification</TableHead>
                     <TableHead>Recommended Resume</TableHead>
                     <TableHead>Apply Score</TableHead>
+                    <TableHead
+                      className="cursor-pointer select-none hover:text-foreground"
+                      onClick={() => setSortBy("ats")}
+                      data-testid="th-ats-score"
+                    >
+                      ATS Score{sortBy === "ats" && " ↓"}
+                    </TableHead>
                     <TableHead>Apply Priority</TableHead>
                     <TableHead>Freshness</TableHead>
                     <TableHead>Fit</TableHead>
@@ -656,6 +675,24 @@ export default function JobsInbox() {
                         <span className="font-medium text-sm" data-testid={`text-apply-score-${job.id}`}>
                           {job.applyPriorityScore}
                         </span>
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const score = job.atsScore ?? 0;
+                          const colorClass = score >= 70
+                            ? "text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30"
+                            : score >= 40
+                            ? "text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/30"
+                            : "text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30";
+                          return (
+                            <span
+                              className={`text-xs font-semibold px-2 py-0.5 rounded-md ${colorClass}`}
+                              data-testid={`text-ats-score-${job.id}`}
+                            >
+                              {score}
+                            </span>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         {job.applyPriorityLabel && (
