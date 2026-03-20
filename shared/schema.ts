@@ -64,6 +64,9 @@ export const jobs = pgTable("jobs", {
   importSource: text("import_source").notNull().default(""),
   importedAt: timestamp("imported_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  discoveryRunId: integer("discovery_run_id"),
+  scanBatchLabel: text("scan_batch_label").notNull().default(""),
+  scanDate: text("scan_date").notNull().default(""),
 });
 
 export const insertJobSchema = createInsertSchema(jobs).omit({ id: true, createdAt: true });
@@ -130,6 +133,8 @@ export const discoveryRuns = pgTable("discovery_runs", {
   sourcesSearched: text("sources_searched").array().notNull().default(sql`ARRAY[]::text[]`),
   startedAt: timestamp("started_at").notNull().defaultNow(),
   completedAt: timestamp("completed_at"),
+  runDate: text("run_date").notNull().default(""),
+  runLabel: text("run_label").notNull().default(""),
 });
 
 export const insertDiscoveryRunSchema = createInsertSchema(discoveryRuns).omit({ id: true, startedAt: true });

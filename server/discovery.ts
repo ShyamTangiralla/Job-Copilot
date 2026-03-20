@@ -41,6 +41,17 @@ interface DiscoveryConfig {
 let activeRunId: number | null = null;
 let abortController: AbortController | null = null;
 
+function generateRunLabel(date: Date): { runDate: string; runLabel: string } {
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const dayName = days[date.getDay()];
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const year = date.getFullYear();
+  const runDate = `${year}-${month}-${day}`;
+  const runLabel = `${dayName} - ${month}/${day}/${year}`;
+  return { runDate, runLabel };
+}
+
 export function isDiscoveryRunning(): boolean {
   return activeRunId !== null;
 }
@@ -319,6 +330,9 @@ export async function runDiscovery(): Promise<number> {
   abortController = new AbortController();
   const signal = abortController.signal;
 
+  const now = new Date();
+  const { runDate, runLabel } = generateRunLabel(now);
+
   const run = await storage.createDiscoveryRun({
     status: "running",
     jobsFound: 0,
@@ -326,6 +340,8 @@ export async function runDiscovery(): Promise<number> {
     jobsDuplicate: 0,
     jobsFailed: 0,
     sourcesSearched: [],
+    runDate,
+    runLabel,
   });
   activeRunId = run.id;
 
@@ -481,6 +497,9 @@ export async function runDiscovery(): Promise<number> {
             freshnessLabel: discovered.freshnessLabel === "Too Old" ? "Unknown Date" : discovered.freshnessLabel ?? "Unknown Date",
             importSource: "discovery",
             importedAt: new Date(),
+            discoveryRunId: run.id,
+            scanBatchLabel: runLabel,
+            scanDate: runDate,
           });
 
           imported++;
