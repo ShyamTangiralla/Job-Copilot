@@ -15,6 +15,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, ilike, sql } from "drizzle-orm";
+import { calculateATSScore } from "./ats";
 
 function normalizeUrl(url: string): string {
   try {
@@ -132,7 +133,17 @@ export class DatabaseStorage implements IStorage {
   async createJob(data: InsertJob): Promise<Job> {
     const weights = await this.getScoringWeights();
     const { matchScoreNumeric: _, ...classified } = this.classifyAndScore(data, weights);
-    const [created] = await db.insert(jobs).values(classified).returning();
+
+    let atsScore = data.atsScore ?? 0;
+    if (!atsScore && data.description) {
+      const activeResumes = await db.select().from(resumes).where(eq(resumes.active, true)).orderBy(desc(resumes.updatedAt)).limit(1);
+      const activeResume = activeResumes[0];
+      if (activeResume?.plainText) {
+        atsScore = calculateATSScore(activeResume.plainText, data.description);
+      }
+    }
+
+    const [created] = await db.insert(jobs).values({ ...classified, atsScore }).returning();
     return created;
   }
 
