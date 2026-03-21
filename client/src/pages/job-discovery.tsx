@@ -10,8 +10,19 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Loader2, Play, Square, Save, Search, CheckCircle2, XCircle, AlertTriangle, Clock, Globe, Building2, Zap, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Play, Square, Save, Search, CheckCircle2, XCircle, AlertTriangle, Clock, Globe, Building2, Zap, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { SiLinkedin } from "react-icons/si";
 import type { DiscoveryResult, DiscoveryRun } from "@shared/schema";
+
+interface LinkedInJobResult {
+  title: string;
+  company: string;
+  location: string;
+  applyLink: string;
+  datePosted: string;
+  source: string;
+  description: string;
+}
 
 interface DiscoverySettings {
   primaryRoles: string[];
@@ -98,6 +109,35 @@ export default function JobDiscovery() {
   const { toast } = useToast();
   const [configOpen, setConfigOpen] = useState(true);
   const [local, setLocal] = useState<DiscoverySettings | null>(null);
+
+  // LinkedIn Search state
+  const [apifyToken, setApifyToken] = useState("");
+  const [liRoles, setLiRoles] = useState("");
+  const [liLocation, setLiLocation] = useState("United States");
+  const [liResults, setLiResults] = useState<LinkedInJobResult[]>([]);
+  const [liError, setLiError] = useState<string | null>(null);
+
+  const liSearchMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", "/api/search-jobs", {
+        roles: liRoles,
+        location: liLocation,
+        apifyToken,
+      }).then((r) => r.json()),
+    onSuccess: (data: { results: LinkedInJobResult[]; count: number }) => {
+      setLiResults(data.results ?? []);
+      setLiError(null);
+      if ((data.results ?? []).length === 0) {
+        toast({ title: "No results", description: "No LinkedIn jobs found for those criteria in the last 24 hours." });
+      } else {
+        toast({ title: `${data.count} jobs found`, description: "Results shown below. Nothing has been saved yet." });
+      }
+    },
+    onError: (err: any) => {
+      setLiError(err?.message ?? "Search failed");
+      toast({ title: "Search Failed", description: err?.message, variant: "destructive" });
+    },
+  });
 
   const { data: settings, isLoading: settingsLoading } = useQuery<DiscoverySettings>({ queryKey: ["/api/discovery/settings"] });
   const { data: status } = useQuery<{ running: boolean; latestRun: DiscoveryRun | null }>({
@@ -590,6 +630,138 @@ export default function JobDiscovery() {
                       </td>
                       <td className="py-2 pr-2">{r.classification || "—"}</td>
                       <td className="py-2 pr-2 max-w-[150px] truncate">{r.recommendedResume || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* LinkedIn Search */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <SiLinkedin className="h-5 w-5 text-[#0A66C2]" />
+            <div>
+              <CardTitle className="text-base">LinkedIn Search</CardTitle>
+              <CardDescription>Search LinkedIn for jobs posted in the last 24 hours via Apify. Results are displayed only — nothing is saved automatically.</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="li-token" className="text-sm">Apify API Token</Label>
+              <Input
+                id="li-token"
+                type="password"
+                placeholder="apify_api_xxxxxxxxxxxx"
+                value={apifyToken}
+                onChange={(e) => setApifyToken(e.target.value)}
+                data-testid="input-apify-token"
+                className="h-8 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="li-roles" className="text-sm">Job Roles (comma separated)</Label>
+              <Input
+                id="li-roles"
+                placeholder="Data Analyst, Business Analyst"
+                value={liRoles}
+                onChange={(e) => setLiRoles(e.target.value)}
+                data-testid="input-li-roles"
+                className="h-8 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="li-location" className="text-sm">Location</Label>
+              <Input
+                id="li-location"
+                placeholder="United States"
+                value={liLocation}
+                onChange={(e) => setLiLocation(e.target.value)}
+                data-testid="input-li-location"
+                className="h-8 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={() => liSearchMutation.mutate()}
+              disabled={liSearchMutation.isPending || !apifyToken.trim() || !liRoles.trim()}
+              data-testid="button-search-linkedin"
+            >
+              {liSearchMutation.isPending
+                ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                : <Search className="h-4 w-4 mr-2" />}
+              Search LinkedIn Jobs
+            </Button>
+            {liResults.length > 0 && !liSearchMutation.isPending && (
+              <span className="text-sm text-muted-foreground" data-testid="li-result-count">
+                {liResults.length} result{liResults.length !== 1 ? "s" : ""} found — not yet saved
+              </span>
+            )}
+          </div>
+
+          {liSearchMutation.isPending && (
+            <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Searching LinkedIn via Apify — this may take 30–90 seconds…
+            </div>
+          )}
+
+          {liError && !liSearchMutation.isPending && (
+            <div className="rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" data-testid="li-error-message">
+              {liError}
+            </div>
+          )}
+
+          {liResults.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left">
+                    <th className="pb-2 pr-3 font-medium">Job Title</th>
+                    <th className="pb-2 pr-3 font-medium">Company</th>
+                    <th className="pb-2 pr-3 font-medium">Location</th>
+                    <th className="pb-2 pr-3 font-medium">Date Posted</th>
+                    <th className="pb-2 pr-3 font-medium">Source</th>
+                    <th className="pb-2 font-medium">Apply Link</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {liResults.map((job, idx) => (
+                    <tr key={idx} className="border-b last:border-0 hover:bg-muted/50" data-testid={`li-result-row-${idx}`}>
+                      <td className="py-2 pr-3 max-w-[200px]">
+                        <span className="font-medium truncate block" data-testid={`li-title-${idx}`}>{job.title || "—"}</span>
+                      </td>
+                      <td className="py-2 pr-3 text-muted-foreground" data-testid={`li-company-${idx}`}>{job.company || "—"}</td>
+                      <td className="py-2 pr-3 text-muted-foreground max-w-[150px] truncate" data-testid={`li-location-${idx}`}>{job.location || "—"}</td>
+                      <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap" data-testid={`li-date-${idx}`}>{job.datePosted || "—"}</td>
+                      <td className="py-2 pr-3">
+                        <Badge variant="outline" className="text-[#0A66C2] border-[#0A66C2]/30">
+                          <SiLinkedin className="h-3 w-3 mr-1" />
+                          {job.source || "LinkedIn"}
+                        </Badge>
+                      </td>
+                      <td className="py-2">
+                        {job.applyLink ? (
+                          <a
+                            href={job.applyLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-primary hover:underline text-xs"
+                            data-testid={`li-apply-${idx}`}
+                          >
+                            Apply <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
