@@ -134,12 +134,21 @@ export class DatabaseStorage implements IStorage {
     const weights = await this.getScoringWeights();
     const { matchScoreNumeric: _, ...classified } = this.classifyAndScore(data, weights);
 
-    let atsScore = data.atsScore ?? 0;
-    if (!atsScore && data.description) {
-      const activeResumes = await db.select().from(resumes).where(eq(resumes.active, true)).orderBy(desc(resumes.updatedAt)).limit(1);
-      const activeResume = activeResumes[0];
-      if (activeResume?.plainText) {
-        atsScore = calculateATSScore(activeResume.plainText, data.description);
+    let atsScore = 0;
+    const jobText = [data.title, data.description].filter(Boolean).join(" ").trim();
+    if (jobText) {
+      try {
+        const [activeResume] = await db
+          .select()
+          .from(resumes)
+          .where(eq(resumes.active, true))
+          .orderBy(desc(resumes.updatedAt))
+          .limit(1);
+        if (activeResume?.plainText) {
+          atsScore = calculateATSScore(activeResume.plainText, jobText);
+        }
+      } catch {
+        atsScore = 0;
       }
     }
 
