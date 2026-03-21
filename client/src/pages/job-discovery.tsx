@@ -116,6 +116,8 @@ export default function JobDiscovery() {
   const [liLocation, setLiLocation] = useState("United States");
   const [liResults, setLiResults] = useState<LinkedInJobResult[]>([]);
   const [liError, setLiError] = useState<string | null>(null);
+  const [selectedJobIndices, setSelectedJobIndices] = useState<Set<number>>(new Set());
+  const [liImportSummary, setLiImportSummary] = useState<{ imported: number; duplicates: number; failed: number } | null>(null);
 
   const liSearchMutation = useMutation({
     mutationFn: () =>
@@ -127,6 +129,8 @@ export default function JobDiscovery() {
     onSuccess: (data: { results: LinkedInJobResult[]; count: number }) => {
       setLiResults(data.results ?? []);
       setLiError(null);
+      setSelectedJobIndices(new Set());
+      setLiImportSummary(null);
       if ((data.results ?? []).length === 0) {
         toast({ title: "No results", description: "No LinkedIn jobs found for those criteria in the last 24 hours." });
       } else {
@@ -138,6 +142,44 @@ export default function JobDiscovery() {
       toast({ title: "Search Failed", description: err?.message, variant: "destructive" });
     },
   });
+
+  const liImportMutation = useMutation({
+    mutationFn: (jobs: LinkedInJobResult[]) =>
+      apiRequest("POST", "/api/import-linkedin-jobs", { jobs }).then((r) => r.json()),
+    onSuccess: (data: { imported: number; duplicates: number; failed: number }) => {
+      setLiImportSummary(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      const parts: string[] = [];
+      if (data.imported > 0) parts.push(`${data.imported} imported`);
+      if (data.duplicates > 0) parts.push(`${data.duplicates} duplicate${data.duplicates !== 1 ? "s" : ""} skipped`);
+      if (data.failed > 0) parts.push(`${data.failed} failed`);
+      toast({
+        title: data.imported > 0 ? "Import Complete" : "Nothing New Imported",
+        description: parts.join(", ") + (data.imported > 0 ? ". Check Jobs Inbox." : ""),
+        variant: data.imported > 0 ? "default" : "destructive",
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "Import Failed", description: err?.message, variant: "destructive" });
+    },
+  });
+
+  const toggleJobSelection = (idx: number) => {
+    setSelectedJobIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedJobIndices.size === liResults.length) {
+      setSelectedJobIndices(new Set());
+    } else {
+      setSelectedJobIndices(new Set(liResults.map((_, i) => i)));
+    }
+  };
 
   const { data: settings, isLoading: settingsLoading } = useQuery<DiscoverySettings>({ queryKey: ["/api/discovery/settings"] });
   const { data: status } = useQuery<{ running: boolean; latestRun: DiscoveryRun | null }>({
@@ -688,7 +730,7 @@ export default function JobDiscovery() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <Button
               onClick={() => liSearchMutation.mutate()}
               disabled={liSearchMutation.isPending || !apifyToken.trim() || !liRoles.trim()}
@@ -699,10 +741,39 @@ export default function JobDiscovery() {
                 : <Search className="h-4 w-4 mr-2" />}
               Search LinkedIn Jobs
             </Button>
+
             {liResults.length > 0 && !liSearchMutation.isPending && (
-              <span className="text-sm text-muted-foreground" data-testid="li-result-count">
-                {liResults.length} result{liResults.length !== 1 ? "s" : ""} found — not yet saved
-              </span>
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const jobs = Array.from(selectedJobIndices).map((i) => liResults[i]);
+                    if (jobs.length === 0) return;
+                    liImportMutation.mutate(jobs);
+                  }}
+                  disabled={liImportMutation.isPending || selectedJobIndices.size === 0}
+                  data-testid="button-import-selected"
+                >
+                  {liImportMutation.isPending
+                    ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    : <CheckCircle2 className="h-4 w-4 mr-2" />}
+                  Import Selected ({selectedJobIndices.size})
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => liImportMutation.mutate(liResults)}
+                  disabled={liImportMutation.isPending}
+                  data-testid="button-import-all"
+                >
+                  {liImportMutation.isPending
+                    ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    : <CheckCircle2 className="h-4 w-4 mr-2" />}
+                  Import All ({liResults.length})
+                </Button>
+                <span className="text-sm text-muted-foreground" data-testid="li-result-count">
+                  {liResults.length} result{liResults.length !== 1 ? "s" : ""} found
+                </span>
+              </>
             )}
           </div>
 
@@ -713,9 +784,29 @@ export default function JobDiscovery() {
             </div>
           )}
 
+          {liImportMutation.isPending && (
+            <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Importing jobs and running ATS scoring…
+            </div>
+          )}
+
           {liError && !liSearchMutation.isPending && (
             <div className="rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" data-testid="li-error-message">
               {liError}
+            </div>
+          )}
+
+          {liImportSummary && (
+            <div className="flex items-center gap-4 rounded border bg-muted/50 px-3 py-2 text-sm" data-testid="li-import-summary">
+              <span className="font-medium">Import result:</span>
+              <span className="text-green-600 font-medium">{liImportSummary.imported} imported</span>
+              {liImportSummary.duplicates > 0 && (
+                <span className="text-yellow-600">{liImportSummary.duplicates} duplicate{liImportSummary.duplicates !== 1 ? "s" : ""} skipped</span>
+              )}
+              {liImportSummary.failed > 0 && (
+                <span className="text-destructive">{liImportSummary.failed} failed</span>
+              )}
             </div>
           )}
 
@@ -724,6 +815,16 @@ export default function JobDiscovery() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left">
+                    <th className="pb-2 pr-2 w-8">
+                      <input
+                        type="checkbox"
+                        checked={liResults.length > 0 && selectedJobIndices.size === liResults.length}
+                        onChange={toggleSelectAll}
+                        data-testid="checkbox-select-all-li"
+                        className="rounded"
+                        title="Select all"
+                      />
+                    </th>
                     <th className="pb-2 pr-3 font-medium">Job Title</th>
                     <th className="pb-2 pr-3 font-medium">Company</th>
                     <th className="pb-2 pr-3 font-medium">Location</th>
@@ -734,7 +835,21 @@ export default function JobDiscovery() {
                 </thead>
                 <tbody>
                   {liResults.map((job, idx) => (
-                    <tr key={idx} className="border-b last:border-0 hover:bg-muted/50" data-testid={`li-result-row-${idx}`}>
+                    <tr
+                      key={idx}
+                      className={`border-b last:border-0 hover:bg-muted/50 cursor-pointer ${selectedJobIndices.has(idx) ? "bg-primary/5" : ""}`}
+                      onClick={() => toggleJobSelection(idx)}
+                      data-testid={`li-result-row-${idx}`}
+                    >
+                      <td className="py-2 pr-2" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedJobIndices.has(idx)}
+                          onChange={() => toggleJobSelection(idx)}
+                          data-testid={`checkbox-li-job-${idx}`}
+                          className="rounded"
+                        />
+                      </td>
                       <td className="py-2 pr-3 max-w-[200px]">
                         <span className="font-medium truncate block" data-testid={`li-title-${idx}`}>{job.title || "—"}</span>
                       </td>
@@ -747,7 +862,7 @@ export default function JobDiscovery() {
                           {job.source || "LinkedIn"}
                         </Badge>
                       </td>
-                      <td className="py-2">
+                      <td className="py-2" onClick={(e) => e.stopPropagation()}>
                         {job.applyLink ? (
                           <a
                             href={job.applyLink}

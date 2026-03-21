@@ -1008,5 +1008,73 @@ export async function registerRoutes(
     }
   });
 
+  // POST /api/import-linkedin-jobs
+  // Accepts an array of LinkedIn job objects, deduplicates, inserts, and runs ATS scoring.
+  app.post("/api/import-linkedin-jobs", async (req, res) => {
+    try {
+      const { jobs } = req.body;
+
+      if (!Array.isArray(jobs) || jobs.length === 0) {
+        return res.status(400).json({ message: "jobs must be a non-empty array" });
+      }
+
+      let imported = 0;
+      let duplicates = 0;
+      let failed = 0;
+      const importedJobs: { id: number; title: string; company: string }[] = [];
+      const duplicateDetails: { title: string; company: string; reason: string }[] = [];
+      const failedDetails: { title: string; company: string; error: string }[] = [];
+
+      for (const raw of jobs) {
+        const title: string = String(raw.title || "Untitled Position").trim();
+        const company: string = String(raw.company || "Unknown Company").trim();
+        const applyLink: string = String(raw.applyLink || "").trim();
+        const location: string = String(raw.location || "").trim();
+        const description: string = String(raw.description || "").trim();
+        const datePosted: string = String(raw.datePosted || "").trim();
+
+        try {
+          const dupCheck = await storage.checkDuplicate(title, company, applyLink, datePosted || undefined);
+          if (dupCheck.isDuplicate) {
+            duplicates++;
+            duplicateDetails.push({ title, company, reason: dupCheck.reason ?? "duplicate" });
+            continue;
+          }
+
+          const job = await storage.createJob({
+            title,
+            company,
+            source: "LinkedIn",
+            location,
+            description,
+            applyLink,
+            datePosted: datePosted || undefined,
+            workMode: location.toLowerCase().includes("remote") ? "Remote" : undefined,
+            status: "New",
+            importSource: "linkedin-search",
+            importedAt: new Date(),
+          });
+
+          imported++;
+          importedJobs.push({ id: job.id, title: job.title, company: job.company });
+        } catch (err: any) {
+          failed++;
+          failedDetails.push({ title, company, error: err?.message ?? "Unknown error" });
+        }
+      }
+
+      res.json({
+        imported,
+        duplicates,
+        failed,
+        importedJobs,
+        duplicateDetails,
+        failedDetails,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   return httpServer;
 }
