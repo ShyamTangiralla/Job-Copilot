@@ -8,6 +8,7 @@ import { insertJobSchema, insertResumeSchema, insertApplicationAnswerSchema, ins
 import { scrapeJobFromUrl, parseEmailContent, parseBulkInput } from "./scraper";
 import { runDiscovery, stopDiscovery, isDiscoveryRunning } from "./discovery";
 import { analyzeAndTailor, optimizeResume } from "./tailoring";
+import { aiOptimizeResume } from "./ai-optimize";
 import { searchLinkedInJobs } from "./linkedin-search";
 import { calculateATSBreakdown } from "./ats";
 
@@ -868,8 +869,21 @@ export async function registerRoutes(
       if (!jobDescription || !resumeText) {
         return res.status(400).json({ message: "jobDescription and resumeText are required" });
       }
-      const result = optimizeResume(resumeText, jobDescription);
-      res.json(result);
+      if (process.env.OPENAI_API_KEY) {
+        try {
+          const result = await aiOptimizeResume(resumeText, jobDescription);
+          res.json(result);
+        } catch (aiErr: any) {
+          const msg: string = aiErr?.message ?? "";
+          if (msg.includes("429") || msg.includes("quota") || msg.includes("billing")) {
+            return res.status(402).json({ message: "OpenAI quota exceeded. Please check your API key billing at platform.openai.com.", code: "QUOTA_EXCEEDED" });
+          }
+          throw aiErr;
+        }
+      } else {
+        const result = optimizeResume(resumeText, jobDescription);
+        res.json(result);
+      }
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
