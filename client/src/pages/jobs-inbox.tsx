@@ -65,6 +65,8 @@ export default function JobsInbox() {
   const [filterFreshness, setFilterFreshness] = useState("all");
   const [filterApplyPriority, setFilterApplyPriority] = useState("all");
   const [filterMinScore, setFilterMinScore] = useState("all");
+  const [filterImportSource, setFilterImportSource] = useState("all");
+  const [filterScanBatch, setFilterScanBatch] = useState("all");
   const [quickFilter, setQuickFilter] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<"score" | "imported" | "ats">("score");
   const [showFilters, setShowFilters] = useState(false);
@@ -121,6 +123,23 @@ export default function JobsInbox() {
 
   const sources = [...new Set(jobs?.map((j) => j.source).filter(Boolean) ?? [])];
 
+  // Scan batches from all jobs that have a label
+  const scanBatches = [...new Set(jobs?.map((j) => j.scanBatchLabel).filter(Boolean) ?? [])].sort().reverse();
+
+  // All import source values mapped to friendly labels
+  const IMPORT_SOURCE_LABELS: Record<string, string> = {
+    "linkedin-search": "LinkedIn Search",
+    "discovery": "Discovery",
+    "url": "URL Import",
+    "email": "Email",
+    "bulk-paste": "Bulk Paste",
+    "bulk-urls": "Bulk URLs",
+    "__manual__": "Manual Add",
+  };
+  const importSources = [...new Set(
+    jobs?.map((j) => j.importSource || "__manual__").filter(Boolean) ?? []
+  )];
+
   const filtered = (jobs ?? []).filter((job) => {
     if (quickFilter) {
       const now = new Date();
@@ -167,6 +186,11 @@ export default function JobsInbox() {
     if (filterFreshness !== "all" && job.freshnessLabel !== filterFreshness) return false;
     if (filterApplyPriority !== "all" && job.applyPriorityLabel !== filterApplyPriority) return false;
     if (filterMinScore !== "all" && job.applyPriorityScore < parseInt(filterMinScore)) return false;
+    if (filterImportSource !== "all") {
+      const jobImportSource = job.importSource || "__manual__";
+      if (jobImportSource !== filterImportSource) return false;
+    }
+    if (filterScanBatch !== "all" && job.scanBatchLabel !== filterScanBatch) return false;
     return true;
   }).sort((a, b) => {
     if (sortBy === "imported") {
@@ -242,7 +266,7 @@ export default function JobsInbox() {
     "Low Priority": "outline",
   };
 
-  const activeFilterCount = [filterRole, filterStatus, filterWorkMode, filterSource, filterPriority, filterFreshness, filterApplyPriority, filterMinScore].filter((f) => f !== "all").length;
+  const activeFilterCount = [filterRole, filterStatus, filterWorkMode, filterSource, filterPriority, filterFreshness, filterApplyPriority, filterMinScore, filterImportSource, filterScanBatch].filter((f) => f !== "all").length;
 
   const quickFilters = [
     { key: "today", label: "Imported Today" },
@@ -575,11 +599,41 @@ export default function JobsInbox() {
                   </Select>
                 </div>
               )}
+              {importSources.length > 0 && (
+                <div className="space-y-1 min-w-[160px]">
+                  <Label className="text-xs">Import Source</Label>
+                  <Select value={filterImportSource} onValueChange={setFilterImportSource}>
+                    <SelectTrigger data-testid="select-filter-import-source"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Import Sources</SelectItem>
+                      {importSources.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {IMPORT_SOURCE_LABELS[s] ?? s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {scanBatches.length > 0 && (
+                <div className="space-y-1 min-w-[200px]">
+                  <Label className="text-xs">Scan Batch</Label>
+                  <Select value={filterScanBatch} onValueChange={setFilterScanBatch}>
+                    <SelectTrigger data-testid="select-filter-scan-batch"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Batches</SelectItem>
+                      {scanBatches.map((b) => (
+                        <SelectItem key={b} value={b}>{b}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <Button
                 variant="secondary"
                 size="sm"
                 className="mt-5"
-                onClick={() => { setFilterRole("all"); setFilterStatus("all"); setFilterWorkMode("all"); setFilterSource("all"); setFilterPriority("all"); setFilterFreshness("all"); setFilterApplyPriority("all"); setFilterMinScore("all"); }}
+                onClick={() => { setFilterRole("all"); setFilterStatus("all"); setFilterWorkMode("all"); setFilterSource("all"); setFilterPriority("all"); setFilterFreshness("all"); setFilterApplyPriority("all"); setFilterMinScore("all"); setFilterImportSource("all"); setFilterScanBatch("all"); }}
                 data-testid="button-clear-filters"
               >
                 <X className="h-3 w-3 mr-1" />

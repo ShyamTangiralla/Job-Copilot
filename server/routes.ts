@@ -1018,6 +1018,15 @@ export async function registerRoutes(
         return res.status(400).json({ message: "jobs must be a non-empty array" });
       }
 
+      // Generate a scan batch label for this LinkedIn import run (mirrors discovery.ts pattern)
+      const now = new Date();
+      const dayName = now.toLocaleDateString("en-US", { weekday: "short" });
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      const year = String(now.getFullYear());
+      const scanDate = `${year}-${month}-${day}`;
+      const scanBatchLabel = `LinkedIn - ${dayName} - ${month}/${day}/${year}`;
+
       let imported = 0;
       let duplicates = 0;
       let failed = 0;
@@ -1053,6 +1062,8 @@ export async function registerRoutes(
             status: "New",
             importSource: "linkedin-search",
             importedAt: new Date(),
+            scanBatchLabel,
+            scanDate,
           });
 
           imported++;
@@ -1070,6 +1081,8 @@ export async function registerRoutes(
         importedJobs,
         duplicateDetails,
         failedDetails,
+        scanBatchLabel,
+        scanDate,
       });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
