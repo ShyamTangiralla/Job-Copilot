@@ -21,13 +21,24 @@ function normalizeUrl(url: string): string {
   try {
     const parsed = new URL(url);
     parsed.hash = "";
-    const trackingParams = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "ref", "fbclid", "gclid", "mc_cid", "mc_eid", "source", "trk", "trkCampaign", "trkInfo", "refId", "trackingId"];
-    for (const param of trackingParams) {
+    // Only strip params that are DEFINITIVELY ad/campaign tracking and never used as job identifiers.
+    // Params like ref, refId, source, trackingId are intentionally kept because many career sites
+    // use them as actual job or application identifiers (e.g. ?source=greenhouse&refId=12345).
+    const pureTrackingParams = [
+      "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+      "fbclid", "gclid",
+      "mc_cid", "mc_eid",
+      "trk", "trkCampaign", "trkInfo",  // LinkedIn nav tracking; job ID is always in the path
+    ];
+    for (const param of pureTrackingParams) {
       parsed.searchParams.delete(param);
     }
+    // Sort remaining params so order differences don't create false non-matches
+    const sorted = new URLSearchParams([...parsed.searchParams.entries()].sort());
     let pathname = parsed.pathname.replace(/\/+$/, "");
     if (!pathname) pathname = "/";
-    return `${parsed.hostname.toLowerCase()}${pathname}${parsed.search}`.toLowerCase();
+    const search = sorted.toString() ? `?${sorted.toString()}` : "";
+    return `${parsed.hostname.toLowerCase()}${pathname}${search}`.toLowerCase();
   } catch {
     return url.toLowerCase().trim().replace(/\/+$/, "");
   }
@@ -202,30 +213,48 @@ export class DatabaseStorage implements IStorage {
   }
 
   async checkDuplicate(title: string, company: string, applyLink: string, datePosted?: string): Promise<{ isDuplicate: boolean; existingJob?: Job; reason?: string }> {
+    // Primary rule: URL-based matching.
+    // A job with an apply link is ONLY a duplicate if the normalized URL matches an existing one.
+    // title+company alone is never enough when a URL is present.
     if (applyLink) {
+      const rawLink = applyLink.toLowerCase().trim().replace(/\/+$/, "");
       const normalizedLink = normalizeUrl(applyLink);
-      const jobsWithLinks = await db.select().from(jobs).where(sql`${jobs.applyLink} != ''`);
-      const urlMatch = jobsWithLinks.find(j => normalizeUrl(j.applyLink) === normalizedLink);
-      if (urlMatch) {
-        return { isDuplicate: true, existingJob: urlMatch, reason: "duplicate by URL" };
+
+      const existingWithLinks = await db.select().from(jobs).where(sql`${jobs.applyLink} != ''`);
+
+      for (const j of existingWithLinks) {
+        const existingRaw = j.applyLink.toLowerCase().trim().replace(/\/+$/, "");
+        if (existingRaw === rawLink) {
+          return { isDuplicate: true, existingJob: j, reason: "exact_url_match" };
+        }
       }
+
+      for (const j of existingWithLinks) {
+        const existingNormalized = normalizeUrl(j.applyLink);
+        if (existingNormalized === normalizedLink) {
+          return { isDuplicate: true, existingJob: j, reason: "normalized_url_match" };
+        }
+      }
+
+      // URL is present and no match found → not a duplicate regardless of title/company
       return { isDuplicate: false };
     }
 
-    if (title && company) {
+    // Secondary rule: no apply link available.
+    // Require title + company + same posting date to call it a duplicate.
+    // Same title+company alone on different dates indicates a new posting.
+    if (title && company && datePosted) {
       const normalizedTitle = title.toLowerCase().trim();
       const normalizedCompany = company.toLowerCase().trim();
       const rows = await db.select().from(jobs)
         .where(and(
           sql`lower(trim(${jobs.title})) = ${normalizedTitle}`,
           sql`lower(trim(${jobs.company})) = ${normalizedCompany}`,
+          sql`${jobs.datePosted} = ${datePosted}`,
         ))
-        .limit(5);
-      if (rows.length > 0 && datePosted) {
-        const dateMatch = rows.find(j => j.datePosted === datePosted);
-        if (dateMatch) {
-          return { isDuplicate: true, existingJob: dateMatch, reason: "duplicate by title+company+date" };
-        }
+        .limit(1);
+      if (rows.length > 0) {
+        return { isDuplicate: true, existingJob: rows[0], reason: "same_company_title_same_day" };
       }
     }
 
