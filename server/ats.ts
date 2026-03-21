@@ -36,6 +36,65 @@ const ROLE_KEYWORDS = [
   "data governance", "data quality", "data management",
 ];
 
+export interface ATSBreakdown {
+  atsScore: number;
+  keywordOverlapPct: number;
+  skillsOverlapPct: number;
+  roleKeywordOverlapPct: number;
+  matchedKeywords: string[];
+  matchedSkills: string[];
+  matchedRoleKeywords: string[];
+  missingSkills: string[];
+}
+
+export function calculateATSBreakdown(resumeText: string, jobDescriptionText: string): ATSBreakdown {
+  if (!resumeText || !jobDescriptionText) {
+    return { atsScore: 0, keywordOverlapPct: 0, skillsOverlapPct: 0, roleKeywordOverlapPct: 0, matchedKeywords: [], matchedSkills: [], matchedRoleKeywords: [], missingSkills: [] };
+  }
+
+  const resume = resumeText.toLowerCase();
+  const jd = jobDescriptionText.toLowerCase();
+
+  const jdTokens = (jd.match(/\b\w{3,}\b/g) || []).filter(w => !STOP_WORDS.has(w));
+  const jdWordSet = new Set(jdTokens);
+  const resumeWordSet = new Set((resume.match(/\b\w{3,}\b/g) || []));
+
+  const jdKeywordList = [...jdWordSet];
+  const matchedKeywords = jdKeywordList.filter(w => resumeWordSet.has(w));
+  const keywordOverlapPct = jdKeywordList.length > 0
+    ? Math.round((matchedKeywords.length / jdKeywordList.length) * 100)
+    : 50;
+
+  const jdSkills = SKILLS.filter(s => jd.includes(s));
+  const matchedSkills = jdSkills.filter(s => resume.includes(s));
+  const missingSkills = jdSkills.filter(s => !resume.includes(s));
+  const skillsOverlapPct = jdSkills.length > 0
+    ? Math.round((matchedSkills.length / jdSkills.length) * 100)
+    : 50;
+
+  const jdRoleKws = ROLE_KEYWORDS.filter(k => jd.includes(k));
+  const matchedRoleKeywords = jdRoleKws.filter(k => resume.includes(k));
+  const roleKeywordOverlapPct = jdRoleKws.length > 0
+    ? Math.round((matchedRoleKeywords.length / jdRoleKws.length) * 100)
+    : 50;
+
+  const keywordScore = jdKeywordList.length > 0 ? (matchedKeywords.length / jdKeywordList.length) * 40 : 20;
+  const skillScore = jdSkills.length > 0 ? (matchedSkills.length / jdSkills.length) * 40 : 20;
+  const roleScore = jdRoleKws.length > 0 ? (matchedRoleKeywords.length / jdRoleKws.length) * 20 : 10;
+  const atsScore = Math.min(100, Math.max(0, Math.round(keywordScore + skillScore + roleScore)));
+
+  return {
+    atsScore,
+    keywordOverlapPct,
+    skillsOverlapPct,
+    roleKeywordOverlapPct,
+    matchedKeywords: matchedKeywords.slice(0, 20),
+    matchedSkills,
+    matchedRoleKeywords,
+    missingSkills: missingSkills.slice(0, 10),
+  };
+}
+
 export function calculateATSScore(resumeText: string, jobDescriptionText: string): number {
   if (!resumeText || !jobDescriptionText) return 0;
 

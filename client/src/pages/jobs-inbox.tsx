@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -20,6 +22,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetClose,
+} from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -41,6 +51,17 @@ import {
   Filter,
   X,
   AlertTriangle,
+  Building,
+  MapPin,
+  Clock,
+  Target,
+  FileText,
+  Sparkles,
+  CheckCircle,
+  XCircle,
+  ChevronDown,
+  ChevronUp,
+  ArrowRight,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -72,6 +93,8 @@ export default function JobsInbox() {
   const [showFilters, setShowFilters] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState<Job | null>(null);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [descExpanded, setDescExpanded] = useState(false);
 
   const { data: jobs, isLoading } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
@@ -92,6 +115,35 @@ export default function JobsInbox() {
     const match = resumes.find((r) => r.roleType === job.resumeRecommendation && r.active);
     return match?.name ?? null;
   };
+
+  interface ATSBreakdown {
+    atsScore: number;
+    keywordOverlapPct: number;
+    skillsOverlapPct: number;
+    roleKeywordOverlapPct: number;
+    matchedKeywords: string[];
+    matchedSkills: string[];
+    matchedRoleKeywords: string[];
+    missingSkills: string[];
+    resumeName: string | null;
+  }
+
+  const { data: atsBreakdown, isLoading: atsLoading } = useQuery<ATSBreakdown>({
+    queryKey: ["/api/jobs", selectedJob?.id, "ats-breakdown"],
+    enabled: !!selectedJob,
+  });
+
+  const updateJobStatus = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      const res = await apiRequest("PATCH", `/api/jobs/${id}`, { status });
+      return res.json();
+    },
+    onSuccess: (updated: Job) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      setSelectedJob(updated);
+      toast({ title: `Job marked as ${updated.status}` });
+    },
+  });
 
   const createJob = useMutation({
     mutationFn: async (data: any) => {
@@ -279,6 +331,7 @@ export default function JobsInbox() {
   ];
 
   return (
+    <>
     <div className="p-6 space-y-4 max-w-7xl mx-auto">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
@@ -689,8 +742,8 @@ export default function JobsInbox() {
                   {filtered.map((job) => (
                     <TableRow
                       key={job.id}
-                      className="cursor-pointer"
-                      onClick={() => navigate(`/jobs/${job.id}`)}
+                      className={`cursor-pointer ${selectedJob?.id === job.id ? "bg-muted/50" : ""}`}
+                      onClick={() => { setSelectedJob(job); setDescExpanded(false); }}
                       data-testid={`row-job-${job.id}`}
                     >
                       <TableCell>
@@ -793,5 +846,261 @@ export default function JobsInbox() {
         </CardContent>
       </Card>
     </div>
+
+    <Sheet open={!!selectedJob} onOpenChange={(open) => { if (!open) setSelectedJob(null); }}>
+      <SheetContent side="right" className="w-[520px] sm:w-[580px] overflow-y-auto p-0">
+        {selectedJob && (
+          <>
+            <SheetHeader className="px-6 pt-6 pb-4 border-b">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <SheetTitle className="text-lg leading-tight">{selectedJob.title}</SheetTitle>
+                  <SheetDescription className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                    <span className="flex items-center gap-1"><Building className="h-3.5 w-3.5" />{selectedJob.company}</span>
+                    {selectedJob.location && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{selectedJob.location}</span>}
+                    {selectedJob.workMode && <Badge variant="secondary" className="text-xs">{selectedJob.workMode}</Badge>}
+                  </SheetDescription>
+                </div>
+                <SheetClose data-testid="button-close-panel" />
+              </div>
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Button size="sm" className="gap-1.5" onClick={() => navigate(`/jobs/${selectedJob.id}`)} data-testid="button-panel-optimize">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Optimize Resume
+                </Button>
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate(`/jobs/${selectedJob.id}?tab=cover-letter`)} data-testid="button-panel-cover-letter">
+                  <FileText className="h-3.5 w-3.5" />
+                  Cover Letter
+                </Button>
+                <Button size="sm" variant="ghost" className="gap-1.5 ml-auto" onClick={() => navigate(`/jobs/${selectedJob.id}`)} data-testid="button-panel-full-detail">
+                  <ArrowRight className="h-3.5 w-3.5" />
+                  Full Details
+                </Button>
+              </div>
+            </SheetHeader>
+
+            <div className="px-6 py-4 space-y-4">
+              <Card>
+                <CardHeader className="pb-2 pt-4 px-4">
+                  <CardTitle className="text-sm">Job Info</CardTitle>
+                </CardHeader>
+                <CardContent className="px-4 pb-4 space-y-2 text-sm">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    <div>
+                      <span className="text-muted-foreground">Status</span>
+                      <div className="mt-0.5">
+                        <Badge variant={statusColor[selectedJob.status] as any ?? "secondary"} className="text-xs">{selectedJob.status}</Badge>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Priority</span>
+                      <div className="mt-0.5">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-md ${priorityColor[selectedJob.priority] ?? ""}`}>{selectedJob.priority}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Source</span>
+                      <div className="mt-0.5 font-medium">{selectedJob.source || "—"}</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Classification</span>
+                      <div className="mt-0.5 font-medium">{selectedJob.roleClassification || "—"}</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Apply Score</span>
+                      <div className="mt-0.5 font-semibold">{selectedJob.applyPriorityScore ?? "—"}</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Fit</span>
+                      <div className="mt-0.5">
+                        {selectedJob.fitLabel ? (
+                          <Badge variant={fitColor[selectedJob.fitLabel] as any ?? "secondary"} className="text-xs">{selectedJob.fitLabel}</Badge>
+                        ) : "—"}
+                      </div>
+                    </div>
+                    {selectedJob.scanBatchLabel && (
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">Scan Batch</span>
+                        <div className="mt-0.5 font-medium text-xs">{selectedJob.scanBatchLabel}</div>
+                      </div>
+                    )}
+                  </div>
+                  {selectedJob.applyLink && (
+                    <div className="pt-1">
+                      <a
+                        href={selectedJob.applyLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                        data-testid="link-panel-apply"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        View Job Posting
+                      </a>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2 pt-4 px-4">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Target className="h-4 w-4" />
+                    ATS Analysis
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-4 pb-4 space-y-3">
+                  {atsLoading ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-4 w-5/6" />
+                    </div>
+                  ) : atsBreakdown ? (
+                    <>
+                      <div>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="font-medium">Overall ATS Score</span>
+                          <span className={`font-bold ${atsBreakdown.atsScore >= 70 ? "text-green-600 dark:text-green-400" : atsBreakdown.atsScore >= 40 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}`}>
+                            {atsBreakdown.atsScore}%
+                          </span>
+                        </div>
+                        <Progress value={atsBreakdown.atsScore} className="h-2" />
+                      </div>
+
+                      <Separator />
+
+                      <div className="space-y-2.5 text-sm">
+                        <div>
+                          <div className="flex justify-between mb-1">
+                            <span className="text-muted-foreground">Keyword Overlap</span>
+                            <span className="font-medium">{atsBreakdown.keywordOverlapPct}%</span>
+                          </div>
+                          <Progress value={atsBreakdown.keywordOverlapPct} className="h-1.5" />
+                        </div>
+                        <div>
+                          <div className="flex justify-between mb-1">
+                            <span className="text-muted-foreground">Skills / Tools</span>
+                            <span className="font-medium">{atsBreakdown.skillsOverlapPct}%</span>
+                          </div>
+                          <Progress value={atsBreakdown.skillsOverlapPct} className="h-1.5" />
+                        </div>
+                        <div>
+                          <div className="flex justify-between mb-1">
+                            <span className="text-muted-foreground">Role Keywords</span>
+                            <span className="font-medium">{atsBreakdown.roleKeywordOverlapPct}%</span>
+                          </div>
+                          <Progress value={atsBreakdown.roleKeywordOverlapPct} className="h-1.5" />
+                        </div>
+                      </div>
+
+                      {atsBreakdown.resumeName && (
+                        <p className="text-xs text-muted-foreground">Scored against: <span className="font-medium">{atsBreakdown.resumeName}</span></p>
+                      )}
+
+                      {atsBreakdown.matchedSkills.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium mb-1.5 flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5 text-green-500" /> Matched Skills</p>
+                          <div className="flex flex-wrap gap-1">
+                            {atsBreakdown.matchedSkills.map((s) => (
+                              <Badge key={s} variant="secondary" className="text-xs bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400">{s}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {atsBreakdown.missingSkills.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium mb-1.5 flex items-center gap-1"><XCircle className="h-3.5 w-3.5 text-red-500" /> Missing Skills</p>
+                          <div className="flex flex-wrap gap-1">
+                            {atsBreakdown.missingSkills.map((s) => (
+                              <Badge key={s} variant="secondary" className="text-xs bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400">{s}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No ATS data available. Add a resume to enable scoring.</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {selectedJob.description && (
+                <Card>
+                  <CardHeader className="pb-2 pt-4 px-4">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Job Description
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4">
+                    <div
+                      className={`text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none overflow-hidden transition-all ${descExpanded ? "" : "max-h-[200px]"}`}
+                      dangerouslySetInnerHTML={{ __html: selectedJob.description }}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2 w-full text-xs gap-1"
+                      onClick={() => setDescExpanded(!descExpanded)}
+                      data-testid="button-toggle-desc"
+                    >
+                      {descExpanded ? <><ChevronUp className="h-3.5 w-3.5" />Show Less</> : <><ChevronDown className="h-3.5 w-3.5" />Show More</>}
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              <Card>
+                <CardContent className="px-4 py-4">
+                  <p className="text-xs text-muted-foreground mb-3 font-medium uppercase tracking-wide">Quick Actions</p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedJob.status !== "Applied" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 border-green-300 text-green-700 hover:bg-green-50 dark:border-green-700 dark:text-green-400 dark:hover:bg-green-950/30"
+                        onClick={() => updateJobStatus.mutate({ id: selectedJob.id, status: "Applied" })}
+                        disabled={updateJobStatus.isPending}
+                        data-testid="button-mark-applied"
+                      >
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        Mark as Applied
+                      </Button>
+                    )}
+                    {selectedJob.status !== "Rejected" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950/30"
+                        onClick={() => updateJobStatus.mutate({ id: selectedJob.id, status: "Rejected" })}
+                        disabled={updateJobStatus.isPending}
+                        data-testid="button-skip-job"
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                        Skip Job
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="gap-1.5 ml-auto"
+                      onClick={() => navigate(`/jobs/${selectedJob.id}`)}
+                      data-testid="button-panel-goto-full"
+                    >
+                      <Clock className="h-3.5 w-3.5" />
+                      History & Notes
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
+    </>
   );
 }

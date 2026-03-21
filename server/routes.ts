@@ -9,6 +9,7 @@ import { scrapeJobFromUrl, parseEmailContent, parseBulkInput } from "./scraper";
 import { runDiscovery, stopDiscovery, isDiscoveryRunning } from "./discovery";
 import { analyzeAndTailor } from "./tailoring";
 import { searchLinkedInJobs } from "./linkedin-search";
+import { calculateATSBreakdown } from "./ats";
 
 const uploadsDir = path.join(process.cwd(), "uploads", "resumes");
 if (!fs.existsSync(uploadsDir)) {
@@ -214,6 +215,24 @@ export async function registerRoutes(
       const job = await storage.getJob(id);
       if (!job) return res.status(404).json({ message: "Job not found" });
       res.json(job);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/jobs/:id/ats-breakdown", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const job = await storage.getJob(id);
+      if (!job) return res.status(404).json({ message: "Job not found" });
+      const resumes = await storage.getResumes();
+      const activeResume = resumes.find(r => r.isActive) ?? resumes[0];
+      if (!activeResume || !job.description) {
+        return res.json({ atsScore: job.atsScore ?? 0, keywordOverlapPct: 0, skillsOverlapPct: 0, roleKeywordOverlapPct: 0, matchedKeywords: [], matchedSkills: [], matchedRoleKeywords: [], missingSkills: [], resumeName: activeResume?.name ?? null });
+      }
+      const jobText = `${job.title} ${job.description}`;
+      const breakdown = calculateATSBreakdown(activeResume.plainText || "", jobText);
+      res.json({ ...breakdown, resumeName: activeResume.name });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
