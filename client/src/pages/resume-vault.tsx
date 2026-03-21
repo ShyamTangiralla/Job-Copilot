@@ -16,7 +16,8 @@ import {
   DialogTrigger,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Plus, FileText, Pencil, Trash2, Clock, Upload, Eye, Download, File, X } from "lucide-react";
+import { Plus, FileText, Pencil, Trash2, Clock, Upload, Eye, Download, File, X, Sparkles, ExternalLink } from "lucide-react";
+import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Resume } from "@shared/schema";
@@ -29,6 +30,7 @@ interface SettingsData {
 
 export default function ResumeVault() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingResume, setEditingResume] = useState<Resume | null>(null);
   const [uploadingId, setUploadingId] = useState<number | null>(null);
@@ -368,9 +370,18 @@ export default function ResumeVault() {
             <Card key={resume.id} data-testid={`card-resume-${resume.id}`}>
               <CardContent className="p-5">
                 <div className="flex items-start justify-between gap-2 mb-3">
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <h3 className="font-medium truncate" data-testid={`text-resume-name-${resume.id}`}>{resume.name}</h3>
-                    <Badge variant="secondary" className="text-xs mt-1" data-testid={`badge-role-type-${resume.id}`}>{resume.roleType}</Badge>
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                      {resume.sourceType === "AI Tailored" ? (
+                        <Badge className="text-xs bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-800" data-testid={`badge-ai-tailored-${resume.id}`}>
+                          <Sparkles className="h-2.5 w-2.5 mr-1" />
+                          AI Tailored
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs" data-testid={`badge-role-type-${resume.id}`}>{resume.roleType}</Badge>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <Switch
@@ -380,6 +391,25 @@ export default function ResumeVault() {
                     />
                   </div>
                 </div>
+
+                {resume.sourceType === "AI Tailored" && resume.jobId && (
+                  <div className="flex items-center gap-2 mb-3 p-2 rounded-md bg-violet-50 dark:bg-violet-950/20 border border-violet-100 dark:border-violet-900/50">
+                    <Sparkles className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                    <span className="text-xs text-violet-700 dark:text-violet-400 flex-1 truncate">
+                      Tailored for job #{resume.jobId}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs text-violet-600 dark:text-violet-400 hover:text-violet-800"
+                      onClick={() => navigate(`/jobs/${resume.jobId}`)}
+                      data-testid={`button-view-job-${resume.id}`}
+                    >
+                      <ExternalLink className="h-3 w-3 mr-1" />
+                      View Job
+                    </Button>
+                  </div>
+                )}
 
                 {resume.fileName ? (
                   <div className="border rounded-md p-3 mb-3 bg-muted/30" data-testid={`file-info-${resume.id}`}>
@@ -475,7 +505,9 @@ export default function ResumeVault() {
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    {new Date(resume.updatedAt).toLocaleDateString()}
+                    {resume.sourceType === "AI Tailored"
+                      ? `Created ${new Date(resume.createdAt).toLocaleDateString()}`
+                      : `Updated ${new Date(resume.updatedAt).toLocaleDateString()}`}
                   </span>
                   <div className="flex gap-1">
                     <Button variant="ghost" size="icon" onClick={() => openEdit(resume)} data-testid={`button-edit-resume-${resume.id}`}>

@@ -33,10 +33,13 @@ export const resumes = pgTable("resumes", {
   filePath: text("file_path").notNull().default(""),
   fileType: text("file_type").notNull().default(""),
   active: boolean("active").notNull().default(true),
+  sourceType: text("source_type").notNull().default("manual"),
+  jobId: integer("job_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertResumeSchema = createInsertSchema(resumes).omit({ id: true, updatedAt: true });
+export const insertResumeSchema = createInsertSchema(resumes).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertResume = z.infer<typeof insertResumeSchema>;
 export type Resume = typeof resumes.$inferSelect;
 

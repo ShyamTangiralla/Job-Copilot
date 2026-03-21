@@ -17,8 +17,9 @@ import {
   FileText,
   AlertCircle,
   Download,
+  Save,
 } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Job, Resume } from "@shared/schema";
 
@@ -56,6 +57,7 @@ export default function JobOptimize() {
   const [hasRun, setHasRun] = useState(false);
   const [copied, setCopied] = useState(false);
   const [quotaError, setQuotaError] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const { data: job, isLoading: jobLoading } = useQuery<Job>({
     queryKey: ["/api/jobs", jobId],
@@ -87,6 +89,30 @@ export default function JobOptimize() {
       } else {
         toast({ title: "Optimization failed", description: "Could not generate suggestions. Please try again.", variant: "destructive" });
       }
+    },
+  });
+
+  const saveResumeMutation = useMutation({
+    mutationFn: async () => {
+      if (!optimizeResult?.tailoredResume || !job) throw new Error("No tailored resume to save");
+      const name = `Tailored – ${job.title} – ${job.company}`;
+      const res = await apiRequest("POST", "/api/resumes", {
+        name,
+        roleType: job.roleClassification || job.title,
+        plainText: optimizeResult.tailoredResume,
+        sourceType: "AI Tailored",
+        jobId: job.id,
+        active: false,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      setSaved(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/resumes"] });
+      toast({ title: "Tailored resume saved to Resume Vault." });
+    },
+    onError: () => {
+      toast({ title: "Save failed", description: "Could not save resume. Please try again.", variant: "destructive" });
     },
   });
 
@@ -380,10 +406,27 @@ export default function JobOptimize() {
                   <p className="text-xs text-muted-foreground italic">
                     Review carefully before use. AI may make small errors — verify all details are accurate.
                   </p>
-                  <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={copyTailoredResume} data-testid="button-copy-tailored-bottom">
-                    <Download className="h-3.5 w-3.5" />
-                    Copy to Clipboard
-                  </Button>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={copyTailoredResume} data-testid="button-copy-tailored-bottom">
+                      <Download className="h-3.5 w-3.5" />
+                      Copy to Clipboard
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="gap-1.5 text-xs"
+                      onClick={() => saveResumeMutation.mutate()}
+                      disabled={saveResumeMutation.isPending || saved}
+                      data-testid="button-save-tailored-resume"
+                    >
+                      {saved ? (
+                        <><CheckCircle className="h-3.5 w-3.5" />Saved to Vault</>
+                      ) : saveResumeMutation.isPending ? (
+                        <><Save className="h-3.5 w-3.5 animate-spin" />Saving…</>
+                      ) : (
+                        <><Save className="h-3.5 w-3.5" />Save as New Resume</>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
