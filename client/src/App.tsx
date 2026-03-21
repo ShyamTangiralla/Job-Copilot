@@ -9,6 +9,7 @@ import NotFound from "@/pages/not-found";
 import Overview from "@/pages/overview";
 import JobsInbox from "@/pages/jobs-inbox";
 import JobDetail from "@/pages/job-detail";
+import JobOptimize from "@/pages/job-optimize";
 import ResumeVault from "@/pages/resume-vault";
 import CandidateProfilePage from "@/pages/candidate-profile";
 import Tracker from "@/pages/tracker";
@@ -24,6 +25,7 @@ function Router() {
       <Route path="/intake" component={JobIntake} />
       <Route path="/discovery" component={JobDiscovery} />
       <Route path="/jobs" component={JobsInbox} />
+      <Route path="/jobs/:id/optimize" component={JobOptimize} />
       <Route path="/jobs/:id" component={JobDetail} />
       <Route path="/resumes" component={ResumeVault} />
       <Route path="/profile" component={CandidateProfilePage} />
