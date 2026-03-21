@@ -34,50 +34,16 @@ import {
   Flag,
   Target,
   Sparkles,
-  Search,
-  CheckCircle,
-  XCircle,
   Copy,
-  Save,
-  ChevronDown,
-  ChevronUp,
   ArrowRight,
   Trash2,
   History,
-  Pencil,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Job, CandidateProfile, Resume, ApplicationAnswer } from "@shared/schema";
 import { JOB_STATUSES, PRIORITIES } from "@shared/schema";
 import { useState, useEffect, useMemo } from "react";
-
-interface KeywordAnalysis {
-  jobKeywords: string[];
-  resumeKeywords: string[];
-  matchedKeywords: string[];
-  missingKeywords: string[];
-  weakKeywords: string[];
-}
-
-interface Improvement {
-  section: string;
-  oldLine: string;
-  newLine: string;
-  reason: string;
-}
-
-interface TailoringResult {
-  keywordAnalysis: KeywordAnalysis;
-  improvements: Improvement[];
-  tailoredText: string;
-  matchBefore: number;
-  matchAfter: number;
-  improvementSummary: string;
-  resumeName: string;
-  jobTitle: string;
-  jobCompany: string;
-}
 
 interface TailoredResumeRecord {
   id: number;
@@ -163,14 +129,8 @@ function TailoringHistory({ jobId }: { jobId: number }) {
 }
 
 function ResumeTailoringAssistant({ job, resumes }: { job: Job; resumes: Resume[] }) {
-  const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [selectedResumeId, setSelectedResumeId] = useState<string>("");
-  const [result, setResult] = useState<TailoringResult | null>(null);
-  const [activeTab, setActiveTab] = useState<"keywords" | "improvements" | "draft" | "summary">("keywords");
-  const [showKeywordsExpanded, setShowKeywordsExpanded] = useState(false);
-  const [saveName, setSaveName] = useState("");
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedDraft, setEditedDraft] = useState("");
 
   const activeResumes = resumes.filter(r => r.active && r.plainText && r.plainText.trim().length > 0);
 
@@ -179,91 +139,9 @@ function ResumeTailoringAssistant({ job, resumes }: { job: Job; resumes: Resume[
       const recommended = activeResumes.find(
         r => r.roleType === (job.resumeRecommendation || job.roleClassification)
       );
-      if (recommended) {
-        setSelectedResumeId(String(recommended.id));
-      } else {
-        setSelectedResumeId(String(activeResumes[0].id));
-      }
+      setSelectedResumeId(String(recommended ? recommended.id : activeResumes[0].id));
     }
   }, [activeResumes, job, selectedResumeId]);
-
-  const analyzeMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/tailoring/analyze", {
-        jobId: job.id,
-        resumeId: parseInt(selectedResumeId),
-      });
-      return res.json();
-    },
-    onSuccess: (data: TailoringResult) => {
-      setResult(data);
-      setActiveTab("keywords");
-      setIsEditing(false);
-      setEditedDraft("");
-      toast({ title: "Analysis Complete", description: data.improvementSummary });
-    },
-    onError: (err: any) => {
-      toast({ title: "Analysis Failed", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const currentDraft = isEditing || editedDraft ? editedDraft : result?.tailoredText || "";
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (!result) throw new Error("No analysis result");
-      const textToSave = editedDraft || result.tailoredText;
-      const res = await apiRequest("POST", "/api/tailoring/save", {
-        jobId: job.id,
-        resumeId: parseInt(selectedResumeId),
-        originalText: activeResumes.find(r => r.id === parseInt(selectedResumeId))?.plainText || "",
-        tailoredText: textToSave,
-        keywordAnalysis: result.keywordAnalysis,
-        improvements: result.improvements,
-        matchBefore: result.matchBefore,
-        matchAfter: result.matchAfter,
-        improvementSummary: result.improvementSummary,
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Saved", description: "Tailored resume saved to this job's history." });
-      queryClient.invalidateQueries({ queryKey: ["/api/tailoring/history", String(job.id)] });
-    },
-    onError: (err: any) => {
-      toast({ title: "Save Failed", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const saveAsResumeMutation = useMutation({
-    mutationFn: async () => {
-      if (!result) throw new Error("No result");
-      const selectedResume = activeResumes.find(r => r.id === parseInt(selectedResumeId));
-      const textToSave = editedDraft || result.tailoredText;
-      const res = await apiRequest("POST", "/api/tailoring/save-as-resume", {
-        tailoredText: textToSave,
-        name: saveName || `${selectedResume?.name || "Resume"} - Tailored for ${job.company}`,
-        roleType: selectedResume?.roleType || job.roleClassification || "Data Analyst",
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Resume Created", description: "Tailored version saved to Resume Vault." });
-      setSaveName("");
-      queryClient.invalidateQueries({ queryKey: ["/api/resumes"] });
-    },
-    onError: (err: any) => {
-      toast({ title: "Save Failed", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const copyToClipboard = () => {
-    const text = editedDraft || result?.tailoredText;
-    if (text) {
-      navigator.clipboard.writeText(text);
-      toast({ title: "Copied", description: "Tailored resume copied to clipboard." });
-    }
-  };
 
   if (activeResumes.length === 0) {
     return (
@@ -271,29 +149,35 @@ function ResumeTailoringAssistant({ job, resumes }: { job: Job; resumes: Resume[
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-medium flex items-center gap-1.5">
             <Sparkles className="h-4 w-4" />
-            Resume Tailoring Assistant
+            Resume Optimization
           </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            No active resumes with text content found. Add a resume with plain text in the Resume Vault to use the tailoring assistant.
+            No active resumes with text content found. Add a resume with plain text in the Resume Vault to enable optimization.
           </p>
+          <Button variant="outline" size="sm" className="mt-3 gap-1.5 text-xs" onClick={() => navigate("/resumes")}>
+            <FileText className="h-3.5 w-3.5" />
+            Go to Resume Vault
+          </Button>
         </CardContent>
       </Card>
     );
   }
+
+  const selectedResume = activeResumes.find(r => r.id === parseInt(selectedResumeId));
 
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-base font-medium flex items-center gap-1.5">
           <Sparkles className="h-4 w-4" />
-          Resume Tailoring Assistant
+          Resume Optimization
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-2">
-          <Label className="text-xs text-muted-foreground">Select Master Resume</Label>
+          <Label className="text-xs text-muted-foreground">Resume to use</Label>
           <Select value={selectedResumeId} onValueChange={setSelectedResumeId}>
             <SelectTrigger data-testid="select-tailoring-resume">
               <SelectValue placeholder="Choose a resume" />
@@ -307,251 +191,19 @@ function ResumeTailoringAssistant({ job, resumes }: { job: Job; resumes: Resume[
         </div>
 
         <Button
-          className="w-full"
-          onClick={() => analyzeMutation.mutate()}
-          disabled={!selectedResumeId || analyzeMutation.isPending}
+          className="w-full gap-2"
+          onClick={() => navigate(`/jobs/${job.id}/optimize`)}
+          disabled={!selectedResumeId}
           data-testid="button-analyze-resume"
         >
-          {analyzeMutation.isPending ? (
-            <>
-              <Search className="h-4 w-4 mr-1 animate-spin" />
-              Analyzing...
-            </>
-          ) : (
-            <>
-              <Search className="h-4 w-4 mr-1" />
-              Analyze Resume Match
-            </>
-          )}
+          <Sparkles className="h-4 w-4" />
+          Optimize Resume
         </Button>
 
-        {result && (
-          <div className="space-y-3 mt-2">
-            <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
-              <div className="flex-1 text-center">
-                <p className="text-xs text-muted-foreground">Before</p>
-                <p className="text-lg font-semibold" data-testid="text-match-before">{result.matchBefore}%</p>
-              </div>
-              <ArrowRight className="h-4 w-4 text-muted-foreground" />
-              <div className="flex-1 text-center">
-                <p className="text-xs text-muted-foreground">After</p>
-                <p className="text-lg font-semibold text-green-600 dark:text-green-400" data-testid="text-match-after">{result.matchAfter}%</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-muted-foreground" data-testid="text-improvement-summary">{result.improvementSummary}</p>
-
-            <div className="flex gap-1">
-              {(["keywords", "improvements", "draft", "summary"] as const).map(tab => (
-                <Button
-                  key={tab}
-                  variant={activeTab === tab ? "default" : "ghost"}
-                  size="sm"
-                  className="text-xs px-2 py-1 h-7"
-                  onClick={() => setActiveTab(tab)}
-                  data-testid={`button-tab-${tab}`}
-                >
-                  {tab === "keywords" ? "Keywords" : tab === "improvements" ? "Changes" : tab === "draft" ? "Draft" : "Summary"}
-                </Button>
-              ))}
-            </div>
-
-            {activeTab === "keywords" && (
-              <div className="space-y-2 text-sm">
-                <div>
-                  <div className="flex items-center gap-1 mb-1">
-                    <CheckCircle className="h-3 w-3 text-green-500" />
-                    <span className="text-xs font-medium">Matched ({result.keywordAnalysis.matchedKeywords.length})</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {result.keywordAnalysis.matchedKeywords.slice(0, showKeywordsExpanded ? undefined : 12).map(kw => (
-                      <Badge key={kw} variant="secondary" className="text-xs bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400">{kw}</Badge>
-                    ))}
-                    {!showKeywordsExpanded && result.keywordAnalysis.matchedKeywords.length > 12 && (
-                      <Button variant="ghost" size="sm" className="h-5 text-xs px-1" onClick={() => setShowKeywordsExpanded(true)}>
-                        +{result.keywordAnalysis.matchedKeywords.length - 12} more
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1 mb-1">
-                    <XCircle className="h-3 w-3 text-red-500" />
-                    <span className="text-xs font-medium">Missing ({result.keywordAnalysis.missingKeywords.length})</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {result.keywordAnalysis.missingKeywords.slice(0, showKeywordsExpanded ? undefined : 12).map(kw => (
-                      <Badge key={kw} variant="secondary" className="text-xs bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400">{kw}</Badge>
-                    ))}
-                    {!showKeywordsExpanded && result.keywordAnalysis.missingKeywords.length > 12 && (
-                      <Button variant="ghost" size="sm" className="h-5 text-xs px-1" onClick={() => setShowKeywordsExpanded(true)}>
-                        +{result.keywordAnalysis.missingKeywords.length - 12} more
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                {result.keywordAnalysis.weakKeywords.length > 0 && (
-                  <div>
-                    <div className="flex items-center gap-1 mb-1">
-                      <AlertTriangle className="h-3 w-3 text-amber-500" />
-                      <span className="text-xs font-medium">Weak Phrasing</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {result.keywordAnalysis.weakKeywords.map(kw => (
-                        <Badge key={kw} variant="secondary" className="text-xs bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">{kw}</Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {(result.keywordAnalysis.matchedKeywords.length > 12 || result.keywordAnalysis.missingKeywords.length > 12) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs h-6"
-                    onClick={() => setShowKeywordsExpanded(!showKeywordsExpanded)}
-                  >
-                    {showKeywordsExpanded ? <ChevronUp className="h-3 w-3 mr-1" /> : <ChevronDown className="h-3 w-3 mr-1" />}
-                    {showKeywordsExpanded ? "Show less" : "Show all"}
-                  </Button>
-                )}
-              </div>
-            )}
-
-            {activeTab === "improvements" && (
-              <div className="space-y-2 max-h-80 overflow-y-auto">
-                {result.improvements.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No changes needed — resume is already well-aligned.</p>
-                ) : (
-                  result.improvements.map((imp, i) => (
-                    <div key={i} className="border rounded p-2 space-y-1">
-                      <div className="flex items-center gap-1">
-                        <Badge variant="secondary" className="text-xs">{imp.section}</Badge>
-                        <span className="text-xs text-muted-foreground">{imp.reason}</span>
-                      </div>
-                      <div className="text-xs">
-                        <div className="bg-red-50 dark:bg-red-900/10 rounded px-2 py-1 line-through text-red-600 dark:text-red-400 break-words" data-testid={`text-old-line-${i}`}>
-                          {imp.oldLine}
-                        </div>
-                        <div className="bg-green-50 dark:bg-green-900/10 rounded px-2 py-1 mt-0.5 text-green-700 dark:text-green-400 break-words" data-testid={`text-new-line-${i}`}>
-                          {imp.newLine}
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            {activeTab === "draft" && (
-              <div className="space-y-2">
-                <div className="flex gap-1 flex-wrap">
-                  {!isEditing ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="text-xs h-7"
-                      onClick={() => {
-                        setEditedDraft(editedDraft || result.tailoredText);
-                        setIsEditing(true);
-                      }}
-                      data-testid="button-edit-draft"
-                    >
-                      <Pencil className="h-3 w-3 mr-1" />
-                      Edit Draft
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="text-xs h-7"
-                      onClick={() => setIsEditing(false)}
-                      data-testid="button-save-edited-draft"
-                    >
-                      <Save className="h-3 w-3 mr-1" />
-                      Done Editing
-                    </Button>
-                  )}
-                  <Button variant="secondary" size="sm" className="text-xs h-7" onClick={copyToClipboard} data-testid="button-copy-draft">
-                    <Copy className="h-3 w-3 mr-1" />
-                    Copy Final
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="text-xs h-7"
-                    onClick={() => saveMutation.mutate()}
-                    disabled={saveMutation.isPending}
-                    data-testid="button-save-tailored"
-                  >
-                    <Save className="h-3 w-3 mr-1" />
-                    Save to Job
-                  </Button>
-                </div>
-                {isEditing ? (
-                  <textarea
-                    value={editedDraft}
-                    onChange={e => setEditedDraft(e.target.value)}
-                    className="w-full border rounded p-2 text-xs font-mono leading-relaxed min-h-[320px] max-h-[500px] resize-y bg-background"
-                    data-testid="textarea-edit-draft"
-                  />
-                ) : (
-                  <div className="border rounded p-2 max-h-80 overflow-y-auto">
-                    <pre className="text-xs whitespace-pre-wrap font-mono leading-relaxed" data-testid="text-tailored-draft">
-                      {editedDraft || result.tailoredText}
-                    </pre>
-                  </div>
-                )}
-                {editedDraft && editedDraft !== result.tailoredText && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">Draft has been manually edited</p>
-                )}
-                <div className="space-y-1.5 pt-1 border-t">
-                  <Label className="text-xs text-muted-foreground">Save as new resume in Vault</Label>
-                  <div className="flex gap-1">
-                    <Input
-                      value={saveName}
-                      onChange={e => setSaveName(e.target.value)}
-                      placeholder={`Resume - Tailored for ${job.company}`}
-                      className="text-xs h-8"
-                      data-testid="input-save-resume-name"
-                    />
-                    <Button
-                      size="sm"
-                      className="text-xs h-8 shrink-0"
-                      onClick={() => saveAsResumeMutation.mutate()}
-                      disabled={saveAsResumeMutation.isPending}
-                      data-testid="button-save-as-resume"
-                    >
-                      Save to Vault
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === "summary" && (
-              <div className="space-y-2 text-sm">
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="border rounded p-2 text-center">
-                    <p className="text-xs text-muted-foreground">ATS Match Before</p>
-                    <p className="text-xl font-semibold">{result.matchBefore}%</p>
-                  </div>
-                  <div className="border rounded p-2 text-center">
-                    <p className="text-xs text-muted-foreground">ATS Match After</p>
-                    <p className="text-xl font-semibold text-green-600 dark:text-green-400">{result.matchAfter}%</p>
-                  </div>
-                </div>
-                <div className="border rounded p-2">
-                  <p className="text-xs font-medium mb-1">Changes Made</p>
-                  <ul className="text-xs space-y-0.5 text-muted-foreground">
-                    <li>Keywords integrated: {result.improvements.filter(i => i.reason.includes("keyword")).length}</li>
-                    <li>Wording strengthened: {result.improvements.filter(i => i.reason.includes("Strengthened")).length}</li>
-                    <li>Total modifications: {result.improvements.length}</li>
-                  </ul>
-                </div>
-                <p className="text-xs text-muted-foreground">{result.improvementSummary}</p>
-              </div>
-            )}
-          </div>
+        {selectedResume && (
+          <p className="text-xs text-muted-foreground text-center">
+            Opens full optimization view for <span className="font-medium">{selectedResume.name}</span>
+          </p>
         )}
       </CardContent>
     </Card>
