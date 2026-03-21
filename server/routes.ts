@@ -8,6 +8,7 @@ import { insertJobSchema, insertResumeSchema, insertApplicationAnswerSchema, ins
 import { scrapeJobFromUrl, parseEmailContent, parseBulkInput } from "./scraper";
 import { runDiscovery, stopDiscovery, isDiscoveryRunning } from "./discovery";
 import { analyzeAndTailor } from "./tailoring";
+import { searchLinkedInJobs } from "./linkedin-search";
 
 const uploadsDir = path.join(process.cwd(), "uploads", "resumes");
 if (!fs.existsSync(uploadsDir)) {
@@ -966,6 +967,42 @@ export async function registerRoutes(
       if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
       await storage.deleteTailoredResume(id);
       res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // LinkedIn job search via Apify (results returned, not auto-inserted)
+  // ---------------------------------------------------------------------------
+  app.post("/api/search-jobs", async (req, res) => {
+    try {
+      const { roles, location, apifyToken } = req.body;
+
+      if (!roles || typeof roles !== "string" || !roles.trim()) {
+        return res.status(400).json({ message: "roles is required (comma-separated string)" });
+      }
+      if (!apifyToken || typeof apifyToken !== "string" || !apifyToken.trim()) {
+        return res.status(400).json({ message: "apifyToken is required" });
+      }
+
+      const roleList = roles
+        .split(",")
+        .map((r: string) => r.trim())
+        .filter((r: string) => r.length > 0);
+
+      if (roleList.length === 0) {
+        return res.status(400).json({ message: "At least one non-empty role is required" });
+      }
+
+      const results = await searchLinkedInJobs(roleList, location || "", apifyToken.trim());
+
+      res.json({
+        results,
+        count: results.length,
+        rolesSearched: roleList,
+        location: location || "United States",
+      });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
