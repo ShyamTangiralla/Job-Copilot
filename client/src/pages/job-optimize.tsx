@@ -19,8 +19,15 @@ import {
   Download,
   Save,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { exportTxt, exportDoc, exportPdf } from "@/lib/export-resume";
 import type { Job, Resume } from "@shared/schema";
 
 interface OptimizeResult {
@@ -408,9 +415,37 @@ export default function JobOptimize() {
                   </p>
                   <div className="flex items-center gap-2 flex-wrap">
                     <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={copyTailoredResume} data-testid="button-copy-tailored-bottom">
-                      <Download className="h-3.5 w-3.5" />
+                      <Copy className="h-3.5 w-3.5" />
                       Copy to Clipboard
                     </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="gap-1.5 text-xs" data-testid="button-export-tailored">
+                          <Download className="h-3.5 w-3.5" />
+                          Export
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => { exportTxt(optimizeResult.tailoredResume!, `${job!.title}_${job!.company}`); toast({ title: "Resume exported successfully." }); }}
+                          data-testid="menu-export-tailored-txt"
+                        >
+                          Export TXT
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => { exportDoc(optimizeResult.tailoredResume!, `${job!.title}_${job!.company}`); toast({ title: "Resume exported successfully." }); }}
+                          data-testid="menu-export-tailored-doc"
+                        >
+                          Export DOC
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => { exportPdf(optimizeResult.tailoredResume!, `${job!.title}_${job!.company}`); toast({ title: "Resume exported successfully." }); }}
+                          data-testid="menu-export-tailored-pdf"
+                        >
+                          Export PDF
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     <Button
                       size="sm"
                       className="gap-1.5 text-xs"

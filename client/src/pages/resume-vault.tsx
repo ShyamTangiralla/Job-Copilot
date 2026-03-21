@@ -18,8 +18,15 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, FileText, Pencil, Trash2, Clock, Upload, Eye, Download, File, X, Sparkles, ExternalLink } from "lucide-react";
 import { useLocation } from "wouter";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { exportTxt, exportDoc, exportPdf } from "@/lib/export-resume";
 import type { Resume } from "@shared/schema";
 
 interface SettingsData {
@@ -509,7 +516,37 @@ export default function ResumeVault() {
                       ? `Created ${new Date(resume.createdAt).toLocaleDateString()}`
                       : `Updated ${new Date(resume.updatedAt).toLocaleDateString()}`}
                   </span>
-                  <div className="flex gap-1">
+                  <div className="flex gap-1 items-center">
+                    {resume.plainText && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" data-testid={`button-export-resume-${resume.id}`}>
+                            <Download className="h-3.5 w-3.5" />
+                            Export
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => { exportTxt(resume.plainText, resume.name); toast({ title: "Resume exported successfully." }); }}
+                            data-testid={`menu-export-txt-${resume.id}`}
+                          >
+                            Export TXT
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => { exportDoc(resume.plainText, resume.name); toast({ title: "Resume exported successfully." }); }}
+                            data-testid={`menu-export-doc-${resume.id}`}
+                          >
+                            Export DOC
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => { exportPdf(resume.plainText, resume.name); toast({ title: "Resume exported successfully." }); }}
+                            data-testid={`menu-export-pdf-${resume.id}`}
+                          >
+                            Export PDF
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                     <Button variant="ghost" size="icon" onClick={() => openEdit(resume)} data-testid={`button-edit-resume-${resume.id}`}>
                       <Pencil className="h-4 w-4" />
                     </Button>
