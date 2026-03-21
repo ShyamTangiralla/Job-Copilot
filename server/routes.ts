@@ -7,7 +7,7 @@ import { storage } from "./storage";
 import { insertJobSchema, insertResumeSchema, insertApplicationAnswerSchema, insertCandidateProfileSchema } from "@shared/schema";
 import { scrapeJobFromUrl, parseEmailContent, parseBulkInput } from "./scraper";
 import { runDiscovery, stopDiscovery, isDiscoveryRunning } from "./discovery";
-import { analyzeAndTailor } from "./tailoring";
+import { analyzeAndTailor, optimizeResume } from "./tailoring";
 import { searchLinkedInJobs } from "./linkedin-search";
 import { calculateATSBreakdown } from "./ats";
 
@@ -226,7 +226,7 @@ export async function registerRoutes(
       const job = await storage.getJob(id);
       if (!job) return res.status(404).json({ message: "Job not found" });
       const resumes = await storage.getResumes();
-      const activeResume = resumes.find(r => r.isActive) ?? resumes[0];
+      const activeResume = resumes.find(r => r.active) ?? resumes[0];
       if (!activeResume || !job.description) {
         return res.json({ atsScore: job.atsScore ?? 0, keywordOverlapPct: 0, skillsOverlapPct: 0, roleKeywordOverlapPct: 0, matchedKeywords: [], matchedSkills: [], matchedRoleKeywords: [], missingSkills: [], resumeName: activeResume?.name ?? null });
       }
@@ -857,6 +857,19 @@ export async function registerRoutes(
       const runId = req.query.runId ? parseInt(req.query.runId as string) : undefined;
       const results = runId ? await storage.getDiscoveryResults(runId) : await storage.getRecentDiscoveryResults();
       res.json(results);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/optimize-resume", async (req, res) => {
+    try {
+      const { jobDescription, resumeText } = req.body;
+      if (!jobDescription || !resumeText) {
+        return res.status(400).json({ message: "jobDescription and resumeText are required" });
+      }
+      const result = optimizeResume(resumeText, jobDescription);
+      res.json(result);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

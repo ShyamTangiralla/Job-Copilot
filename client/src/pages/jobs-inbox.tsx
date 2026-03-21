@@ -95,6 +95,15 @@ export default function JobsInbox() {
   const [duplicateWarning, setDuplicateWarning] = useState<Job | null>(null);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [showOptimize, setShowOptimize] = useState(false);
+
+  interface OptimizeResult {
+    missingKeywords: string[];
+    improvedSummary: string;
+    improvedBullets: { original: string; improved: string; reason: string }[];
+    skillsToHighlight: string[];
+  }
+  const [optimizeResult, setOptimizeResult] = useState<OptimizeResult | null>(null);
 
   const { data: jobs, isLoading } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
@@ -144,6 +153,64 @@ export default function JobsInbox() {
       toast({ title: `Job marked as ${updated.status}` });
     },
   });
+
+  const stripHtml = (html: string) => {
+    const div = document.createElement("div");
+    div.innerHTML = html;
+    return div.textContent || div.innerText || "";
+  };
+
+  const optimizeMutation = useMutation({
+    mutationFn: async ({ jobDescription, resumeText }: { jobDescription: string; resumeText: string }) => {
+      const res = await apiRequest("POST", "/api/optimize-resume", { jobDescription, resumeText });
+      return res.json() as Promise<OptimizeResult>;
+    },
+    onSuccess: (result) => {
+      setOptimizeResult(result);
+      setShowOptimize(true);
+    },
+    onError: () => {
+      toast({ title: "Optimization failed", description: "Could not run resume optimization.", variant: "destructive" });
+    },
+  });
+
+  const handleOptimize = () => {
+    if (!selectedJob) return;
+    const activeResume = resumes?.find(r => r.active) ?? resumes?.[0];
+    if (!activeResume?.plainText) {
+      toast({ title: "No resume found", description: "Add a resume in the Resume Vault to enable optimization.", variant: "destructive" });
+      return;
+    }
+    const jobDescription = selectedJob.description ? stripHtml(selectedJob.description) : selectedJob.title;
+    optimizeMutation.mutate({ jobDescription, resumeText: activeResume.plainText });
+  };
+
+  const copyOptimizedContent = () => {
+    if (!optimizeResult) return;
+    const lines: string[] = [];
+    lines.push("=== OPTIMIZED RESUME SUMMARY ===");
+    lines.push(optimizeResult.improvedSummary);
+    if (optimizeResult.improvedBullets.length > 0) {
+      lines.push("\n=== IMPROVED BULLET POINTS ===");
+      for (const b of optimizeResult.improvedBullets) {
+        lines.push(`Original:  ${b.original}`);
+        lines.push(`Improved:  ${b.improved}`);
+        lines.push(`Reason:    ${b.reason}`);
+        lines.push("");
+      }
+    }
+    if (optimizeResult.skillsToHighlight.length > 0) {
+      lines.push("=== SKILLS TO HIGHLIGHT ===");
+      lines.push(optimizeResult.skillsToHighlight.join(", "));
+    }
+    if (optimizeResult.missingKeywords.length > 0) {
+      lines.push("\n=== MISSING KEYWORDS TO ADD ===");
+      lines.push(optimizeResult.missingKeywords.join(", "));
+    }
+    navigator.clipboard.writeText(lines.join("\n")).then(() => {
+      toast({ title: "Copied to clipboard" });
+    });
+  };
 
   const createJob = useMutation({
     mutationFn: async (data: any) => {
@@ -743,7 +810,7 @@ export default function JobsInbox() {
                     <TableRow
                       key={job.id}
                       className={`cursor-pointer ${selectedJob?.id === job.id ? "bg-muted/50" : ""}`}
-                      onClick={() => { setSelectedJob(job); setDescExpanded(false); }}
+                      onClick={() => { setSelectedJob(job); setDescExpanded(false); setShowOptimize(false); setOptimizeResult(null); }}
                       data-testid={`row-job-${job.id}`}
                     >
                       <TableCell>
@@ -864,9 +931,15 @@ export default function JobsInbox() {
                 <SheetClose data-testid="button-close-panel" />
               </div>
               <div className="flex flex-wrap gap-2 pt-2">
-                <Button size="sm" className="gap-1.5" onClick={() => navigate(`/jobs/${selectedJob.id}`)} data-testid="button-panel-optimize">
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={handleOptimize}
+                  disabled={optimizeMutation.isPending}
+                  data-testid="button-panel-optimize"
+                >
                   <Sparkles className="h-3.5 w-3.5" />
-                  Optimize Resume
+                  {optimizeMutation.isPending ? "Analyzing..." : "Optimize Resume"}
                 </Button>
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate(`/jobs/${selectedJob.id}?tab=cover-letter`)} data-testid="button-panel-cover-letter">
                   <FileText className="h-3.5 w-3.5" />
@@ -1026,6 +1099,85 @@ export default function JobsInbox() {
                   )}
                 </CardContent>
               </Card>
+
+              {(showOptimize || optimizeMutation.isPending) && (
+                <Card className="border-violet-200 dark:border-violet-800">
+                  <CardHeader className="pb-2 pt-4 px-4">
+                    <CardTitle className="text-sm flex items-center justify-between">
+                      <span className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-violet-500" /> Resume Optimization</span>
+                      {optimizeResult && (
+                        <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" onClick={copyOptimizedContent} data-testid="button-copy-optimized">
+                          <FileText className="h-3 w-3" />
+                          Copy All
+                        </Button>
+                      )}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 space-y-4">
+                    {optimizeMutation.isPending ? (
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-4 w-3/4" />
+                        <Skeleton className="h-4 w-5/6" />
+                      </div>
+                    ) : optimizeResult ? (
+                      <>
+                        {optimizeResult.skillsToHighlight.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold mb-2 text-green-700 dark:text-green-400 flex items-center gap-1">
+                              <CheckCircle className="h-3.5 w-3.5" /> Skills to Highlight
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {optimizeResult.skillsToHighlight.map(s => (
+                                <Badge key={s} variant="secondary" className="text-xs bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400">{s}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {optimizeResult.missingKeywords.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold mb-2 text-red-700 dark:text-red-400 flex items-center gap-1">
+                              <XCircle className="h-3.5 w-3.5" /> Missing Keywords
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {optimizeResult.missingKeywords.map(k => (
+                                <Badge key={k} variant="secondary" className="text-xs bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400">{k}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div>
+                          <p className="text-xs font-semibold mb-2 text-violet-700 dark:text-violet-400">Improved Summary</p>
+                          <div className="text-xs bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 rounded-md p-3 leading-relaxed text-muted-foreground">
+                            {optimizeResult.improvedSummary}
+                          </div>
+                        </div>
+
+                        {optimizeResult.improvedBullets.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold mb-2 text-violet-700 dark:text-violet-400">Improved Bullet Points</p>
+                            <div className="space-y-3">
+                              {optimizeResult.improvedBullets.map((b, i) => (
+                                <div key={i} className="text-xs rounded-md border p-3 space-y-1.5">
+                                  <p className="text-muted-foreground line-through leading-relaxed">{b.original}</p>
+                                  <p className="font-medium leading-relaxed">{b.improved}</p>
+                                  <p className="text-violet-600 dark:text-violet-400 italic">{b.reason}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {optimizeResult.improvedBullets.length === 0 && optimizeResult.missingKeywords.length === 0 && (
+                          <p className="text-sm text-muted-foreground italic">Your resume is already well-aligned with this job posting.</p>
+                        )}
+                      </>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              )}
 
               {selectedJob.description && (
                 <Card>

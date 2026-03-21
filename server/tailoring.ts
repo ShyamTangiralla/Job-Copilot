@@ -502,3 +502,88 @@ export function analyzeAndTailor(
     improvementSummary,
   };
 }
+
+export interface OptimizeResult {
+  missingKeywords: string[];
+  improvedSummary: string;
+  improvedBullets: { original: string; improved: string; reason: string }[];
+  skillsToHighlight: string[];
+}
+
+export function optimizeResume(resumeText: string, jobDescription: string): OptimizeResult {
+  const jobKw = extractKeywords(jobDescription);
+  const resumeKw = extractKeywords(resumeText);
+
+  const missingKeywords = [...jobKw].filter(k => !resumeKw.has(k)).slice(0, 20);
+  const skillsToHighlight = [...jobKw].filter(k => resumeKw.has(k) && COMMON_TECHNICAL_KEYWORDS.includes(k)).slice(0, 15);
+
+  const sections = parseResumeIntoSections(resumeText);
+
+  const summarySection = sections.find(s =>
+    ["summary", "objective", "professional summary", "career summary"].includes(s.name)
+  );
+  const existingSummary = summarySection?.content
+    ? summarySection.content.split("\n").filter(l => l.trim().length > 10 && !l.toLowerCase().includes("summary")).join(" ").trim()
+    : "";
+
+  const topJobKw = [...jobKw].slice(0, 8).map(k => k.charAt(0).toUpperCase() + k.slice(1)).join(", ");
+  const topMatchedTech = skillsToHighlight.slice(0, 5).map(k => k.charAt(0).toUpperCase() + k.slice(1)).join(", ");
+  const topMissing = missingKeywords.slice(0, 3).map(k => k.charAt(0).toUpperCase() + k.slice(1)).join(", ");
+
+  let improvedSummary: string;
+  if (existingSummary.length > 30) {
+    let s = existingSummary;
+    const weakReplacements: [RegExp, string][] = [
+      [/responsible for/gi, "managed"],
+      [/helped with/gi, "contributed to"],
+      [/assisted in/gi, "supported"],
+      [/worked on/gi, "contributed to"],
+      [/familiar with/gi, "experienced with"],
+      [/exposure to/gi, "hands-on experience with"],
+    ];
+    for (const [pattern, replacement] of weakReplacements) {
+      s = s.replace(pattern, replacement);
+    }
+    if (topMissing && !s.toLowerCase().includes(missingKeywords[0])) {
+      s = s.replace(/\.\s*$/, "") + `. Seeking to leverage expertise in ${topMissing} to deliver measurable impact.`;
+    }
+    improvedSummary = s;
+  } else {
+    const techStr = topMatchedTech ? ` with proficiency in ${topMatchedTech}` : "";
+    const missingStr = topMissing ? ` Seeking to apply knowledge of ${topMissing}.` : "";
+    improvedSummary = `Results-driven professional${techStr}. Demonstrated ability to analyze complex data, deliver actionable insights, and collaborate with cross-functional teams to achieve business objectives.${missingStr}`;
+  }
+
+  const expSection = sections.find(s =>
+    ["experience", "work experience", "professional experience", "employment"].includes(s.name)
+  );
+
+  const improvedBullets: { original: string; improved: string; reason: string }[] = [];
+
+  if (expSection) {
+    const lines = expSection.content.split("\n");
+    for (const line of lines) {
+      if (improvedBullets.length >= 5) break;
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.length < 20) continue;
+      const isBullet = /^[\-•▪▸►◦\*]\s/.test(trimmed) || /^\d+[\.\)]\s/.test(trimmed);
+      if (!isBullet) continue;
+
+      const result = suggestBulletImprovement(trimmed, missingKeywords, "experience");
+      if (result) {
+        improvedBullets.push({
+          original: trimmed,
+          improved: result.newLine,
+          reason: result.reason,
+        });
+      }
+    }
+  }
+
+  return {
+    missingKeywords,
+    improvedSummary,
+    improvedBullets,
+    skillsToHighlight,
+  };
+}
