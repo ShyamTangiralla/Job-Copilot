@@ -38,6 +38,10 @@ import {
   ArrowRight,
   Trash2,
   History,
+  BarChart3,
+  CheckCircle2,
+  XCircle,
+  Minus,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -123,6 +127,204 @@ function TailoringHistory({ jobId }: { jobId: number }) {
             <p className="text-xs text-muted-foreground">{h.improvementSummary}</p>
           </div>
         ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Job Match Analysis ───────────────────────────────────────────────────────
+
+interface ATSBreakdown {
+  atsScore: number;
+  technicalSkillsPct: number;
+  roleKeywordsPct: number;
+  domainKeywordsPct: number;
+  keywordAlignmentPct: number;
+  matchedSkills: string[];
+  missingSkills: string[];
+  matchedRoleKeywords: string[];
+  missingRoleKeywords: string[];
+  resumeName?: string | null;
+}
+
+function scoreColor(s: number) {
+  if (s >= 75) return "text-green-700 dark:text-green-400";
+  if (s >= 50) return "text-amber-600 dark:text-amber-500";
+  return "text-red-600 dark:text-red-400";
+}
+function scoreBg(s: number) {
+  if (s >= 75) return "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800";
+  if (s >= 50) return "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800";
+  return "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800";
+}
+function barCls(s: number) {
+  if (s >= 70) return "[&>div]:bg-green-500";
+  if (s >= 40) return "[&>div]:bg-amber-500";
+  return "[&>div]:bg-red-500";
+}
+
+function JobMatchAnalysis({ jobId, onOptimize }: { jobId: number; onOptimize: () => void }) {
+  const { data: breakdown, isLoading } = useQuery<ATSBreakdown>({
+    queryKey: ["/api/jobs", String(jobId), "ats-breakdown"],
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-medium flex items-center gap-1.5">
+            <BarChart3 className="h-4 w-4" />Job Match Analysis
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Skeleton className="h-6 w-1/3" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-4/5" />
+          <Skeleton className="h-4 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!breakdown || (breakdown.atsScore === 0 && breakdown.matchedSkills.length === 0)) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-medium flex items-center gap-1.5">
+            <BarChart3 className="h-4 w-4" />Job Match Analysis
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Add an active resume to see how well it matches this job.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const score = breakdown.atsScore;
+
+  const recommendation =
+    score >= 75
+      ? { text: "Strong fit — ready to apply", icon: <CheckCircle2 className="h-4 w-4 shrink-0" />, showOptimize: false }
+      : score >= 50
+      ? { text: "Good potential — optimize your resume first", icon: <Minus className="h-4 w-4 shrink-0" />, showOptimize: true }
+      : { text: "Lower fit — significant tailoring needed", icon: <XCircle className="h-4 w-4 shrink-0" />, showOptimize: true };
+
+  const strengths = [
+    ...breakdown.matchedSkills,
+    ...breakdown.matchedRoleKeywords.filter(k => !breakdown.matchedSkills.includes(k)),
+  ].slice(0, 14);
+
+  const gaps = [
+    ...breakdown.missingSkills,
+    ...breakdown.missingRoleKeywords.filter(k => !breakdown.missingSkills.includes(k)),
+  ].slice(0, 12);
+
+  const categories = [
+    { label: "Technical Skills", value: breakdown.technicalSkillsPct },
+    { label: "Role Keywords", value: breakdown.roleKeywordsPct },
+    { label: "Domain Keywords", value: breakdown.domainKeywordsPct },
+    { label: "Phrase Alignment", value: breakdown.keywordAlignmentPct },
+  ];
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base font-medium flex items-center gap-1.5">
+          <BarChart3 className="h-4 w-4" />Job Match Analysis
+        </CardTitle>
+        {breakdown.resumeName && (
+          <p className="text-xs text-muted-foreground">
+            vs. <span className="font-medium">{breakdown.resumeName}</span>
+          </p>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-4">
+
+        {/* Score + recommendation */}
+        <div className={`flex items-center gap-3 rounded-lg border p-3 ${scoreBg(score)}`}>
+          <span className={`text-3xl font-bold leading-none ${scoreColor(score)}`} data-testid="text-match-score">
+            {score}%
+          </span>
+          <div className="flex-1 min-w-0">
+            <Progress value={score} className={`h-2 mb-1.5 ${barCls(score)}`} />
+            <div className={`flex items-center gap-1.5 text-sm font-medium ${scoreColor(score)}`}>
+              {recommendation.icon}
+              <span data-testid="text-match-recommendation">{recommendation.text}</span>
+            </div>
+          </div>
+        </div>
+
+        {recommendation.showOptimize && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full gap-1.5 text-xs"
+            onClick={onOptimize}
+            data-testid="button-optimize-from-match"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-violet-500" />
+            Optimize Resume for This Job
+          </Button>
+        )}
+
+        {/* Category breakdown */}
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Breakdown</p>
+          {categories.map(({ label, value }) => (
+            <div key={label} className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground w-[110px] shrink-0">{label}</span>
+              <Progress value={value} className={`h-1.5 flex-1 ${barCls(value)}`} />
+              <span className={`text-xs font-medium w-8 text-right ${scoreColor(value)}`}>{value}%</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Strengths */}
+        {strengths.length > 0 && (
+          <div className="space-y-1.5" data-testid="section-strengths">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+              <CheckCircle2 className="h-3 w-3 text-green-600 dark:text-green-400" />
+              Strengths ({strengths.length})
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {strengths.map(k => (
+                <Badge
+                  key={k}
+                  variant="secondary"
+                  className="text-xs bg-green-100 dark:bg-green-950/40 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800"
+                  data-testid={`badge-strength-${k}`}
+                >
+                  {k}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Gaps */}
+        {gaps.length > 0 && (
+          <div className="space-y-1.5" data-testid="section-gaps">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+              <XCircle className="h-3 w-3 text-red-500 dark:text-red-400" />
+              Gaps ({gaps.length})
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {gaps.map(k => (
+                <Badge
+                  key={k}
+                  variant="secondary"
+                  className="text-xs bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800"
+                  data-testid={`badge-gap-${k}`}
+                >
+                  {k}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -492,6 +694,11 @@ export default function JobDetail() {
         </div>
 
         <div className="space-y-4">
+          <JobMatchAnalysis
+            jobId={job.id}
+            onOptimize={() => navigate(`/jobs/${job.id}/optimize`)}
+          />
+
           {resumes && (
             <ResumeTailoringAssistant job={job} resumes={resumes} />
           )}
