@@ -8,7 +8,7 @@ import { insertJobSchema, insertResumeSchema, insertApplicationAnswerSchema, ins
 import { scrapeJobFromUrl, parseEmailContent, parseBulkInput } from "./scraper";
 import { runDiscovery, stopDiscovery, isDiscoveryRunning } from "./discovery";
 import { analyzeAndTailor, optimizeResume } from "./tailoring";
-import { aiOptimizeResume } from "./ai-optimize";
+import { aiOptimizeResume, generateSuggestions, extractKeywords } from "./ai-optimize";
 import { searchLinkedInJobs } from "./linkedin-search";
 import { calculateATSBreakdown, calculateATSScore } from "./ats";
 
@@ -903,6 +903,56 @@ export async function registerRoutes(
           usedEnrichmentPass: false,
         });
       }
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Generate interactive keyword suggestions for a resume + job description
+  app.post("/api/generate-suggestions", async (req, res) => {
+    try {
+      const { jobDescription, resumeText } = req.body;
+      if (!jobDescription || !resumeText) {
+        return res.status(400).json({ message: "jobDescription and resumeText are required" });
+      }
+
+      // Compute missing keywords using the same scorer (no AI needed for detection)
+      const breakdown = calculateATSBreakdown(resumeText, jobDescription);
+      const resumeKws = new Set(extractKeywords(resumeText));
+      const jobKws = extractKeywords(jobDescription);
+      const missingKeywords = [
+        ...jobKws.filter(k => !resumeKws.has(k)),
+        ...breakdown.missingSkills.filter(k => !jobKws.includes(k)),
+      ].filter((v, i, a) => a.indexOf(v) === i).slice(0, 20);
+
+      if (!process.env.OPENAI_API_KEY) {
+        return res.json({ suggestions: [], missingKeywords, noAiKey: true });
+      }
+
+      try {
+        const suggestions = await generateSuggestions(resumeText, jobDescription, missingKeywords);
+        res.json({ suggestions, missingKeywords, noAiKey: false });
+      } catch (aiErr: any) {
+        const msg: string = aiErr?.message ?? "";
+        if (msg.includes("429") || msg.includes("quota") || msg.includes("billing")) {
+          return res.status(402).json({ message: "OpenAI quota exceeded.", code: "QUOTA_EXCEEDED" });
+        }
+        throw aiErr;
+      }
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Fast ATS score recalculation — no AI, pure scoring logic
+  app.post("/api/ats-score", async (req, res) => {
+    try {
+      const { resumeText, jobDescription } = req.body;
+      if (!resumeText || !jobDescription) {
+        return res.status(400).json({ message: "resumeText and jobDescription are required" });
+      }
+      const breakdown = calculateATSBreakdown(resumeText, jobDescription);
+      res.json(breakdown);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
