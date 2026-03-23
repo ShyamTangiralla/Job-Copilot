@@ -25,23 +25,28 @@ import {
   Columns3,
   List,
   Inbox,
-  GripVertical,
   Flag,
+  Trophy,
+  Star,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Job } from "@shared/schema";
 import { JOB_STATUSES } from "@shared/schema";
 
-const KANBAN_COLUMNS = ["New", "Reviewed", "Ready to Apply", "Applied", "Interview", "Rejected", "Skipped"] as const;
+const KANBAN_COLUMNS = ["New", "Reviewed", "Ready to Apply", "Saved", "Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response", "Skipped"] as const;
 
 const columnColors: Record<string, string> = {
   New: "border-t-blue-500",
   Reviewed: "border-t-amber-500",
   "Ready to Apply": "border-t-violet-500",
+  Saved: "border-t-sky-500",
   Applied: "border-t-emerald-500",
   Interview: "border-t-cyan-500",
+  "Final Round": "border-t-indigo-500",
+  Offer: "border-t-yellow-500",
   Rejected: "border-t-red-500",
+  "No Response": "border-t-orange-400",
   Skipped: "border-t-gray-400",
 };
 
@@ -75,11 +80,15 @@ export default function Tracker() {
   const stats = {
     total: jobs?.length ?? 0,
     newToday: jobs?.filter((j) => j.createdAt && new Date(j.createdAt).toISOString().split("T")[0] === today).length ?? 0,
+    saved: jobs?.filter((j) => j.status === "Saved").length ?? 0,
     reviewed: jobs?.filter((j) => j.status === "Reviewed").length ?? 0,
     applied: jobs?.filter((j) => j.status === "Applied").length ?? 0,
     skipped: jobs?.filter((j) => j.status === "Skipped").length ?? 0,
-    interviews: jobs?.filter((j) => j.status === "Interview").length ?? 0,
+    interviews: jobs?.filter((j) => j.status === "Interview" || j.status === "Final Round").length ?? 0,
+    finalRound: jobs?.filter((j) => j.status === "Final Round").length ?? 0,
+    offers: jobs?.filter((j) => j.status === "Offer").length ?? 0,
     rejected: jobs?.filter((j) => j.status === "Rejected").length ?? 0,
+    noResponse: jobs?.filter((j) => j.status === "No Response").length ?? 0,
   };
 
   const bySource: Record<string, number> = {};
@@ -100,22 +109,26 @@ export default function Tracker() {
   });
 
   const summaryCards = [
-    { label: "Added Today", value: stats.newToday, icon: Inbox, color: "text-blue-600 dark:text-blue-400" },
-    { label: "Reviewed", value: stats.reviewed, icon: Eye, color: "text-amber-600 dark:text-amber-400" },
+    { label: "Total Saved", value: stats.total, icon: Inbox, color: "text-blue-600 dark:text-blue-400" },
     { label: "Applied", value: stats.applied, icon: Send, color: "text-emerald-600 dark:text-emerald-400" },
-    { label: "Skipped", value: stats.skipped, icon: SkipForward, color: "text-muted-foreground" },
     { label: "Interviews", value: stats.interviews, icon: MessageSquare, color: "text-cyan-600 dark:text-cyan-400" },
+    { label: "Offers", value: stats.offers, icon: Trophy, color: "text-yellow-600 dark:text-yellow-400" },
     { label: "Rejected", value: stats.rejected, icon: XCircle, color: "text-red-500 dark:text-red-400" },
+    { label: "No Response", value: stats.noResponse, icon: Star, color: "text-orange-500 dark:text-orange-400" },
   ];
 
   const statusColor: Record<string, string> = {
     New: "secondary",
-    Reviewed: "default",
-    "Ready to Apply": "default",
+    Reviewed: "secondary",
+    "Ready to Apply": "secondary",
+    Saved: "secondary",
     Applied: "default",
     Skipped: "secondary",
     Interview: "default",
+    "Final Round": "default",
+    Offer: "default",
     Rejected: "destructive",
+    "No Response": "secondary",
   };
 
   const exportCSV = () => {

@@ -50,7 +50,7 @@ import { exportPdf } from "@/lib/export-resume";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Job, CandidateProfile, Resume, ApplicationAnswer } from "@shared/schema";
-import { JOB_STATUSES, PRIORITIES } from "@shared/schema";
+import { APPLICATION_STATUSES, PRIORITIES } from "@shared/schema";
 import { useState, useEffect, useMemo } from "react";
 
 interface TailoredResumeRecord {
@@ -624,6 +624,10 @@ export default function JobDetail() {
   const { toast } = useToast();
   const [notes, setNotes] = useState("");
   const [followUpDate, setFollowUpDate] = useState("");
+  const [dateApplied, setDateApplied] = useState("");
+  const [interviewDate, setInterviewDate] = useState("");
+  const [recruiterName, setRecruiterName] = useState("");
+  const [recruiterEmail, setRecruiterEmail] = useState("");
 
   const { data: job, isLoading } = useQuery<Job>({
     queryKey: ["/api/jobs", params.id],
@@ -645,6 +649,10 @@ export default function JobDetail() {
     if (job) {
       setNotes(job.notes);
       setFollowUpDate(job.followUpDate ?? "");
+      setDateApplied((job as any).dateApplied ?? "");
+      setInterviewDate((job as any).interviewDate ?? "");
+      setRecruiterName((job as any).recruiterName ?? "");
+      setRecruiterEmail((job as any).recruiterEmail ?? "");
     }
   }, [job]);
 
@@ -812,23 +820,24 @@ export default function JobDetail() {
         </Alert>
       )}
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-sm text-muted-foreground mr-1">Status:</span>
-        {JOB_STATUSES.map((s) => (
-          <Button
-            key={s}
-            variant={job.status === s ? "default" : "secondary"}
-            size="sm"
-            onClick={() => updateStatus(s)}
-            disabled={updateJob.isPending}
-            data-testid={`button-status-${s.toLowerCase().replace(/\s+/g, "-")}`}
-          >
-            {s}
-          </Button>
-        ))}
-      </div>
-
       <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Status:</span>
+          <Select value={job.status} onValueChange={(v) => { updateStatus(v); }} data-testid="select-job-status">
+            <SelectTrigger className="w-[160px]" data-testid="trigger-job-status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {APPLICATION_STATUSES.map((s) => (
+                <SelectItem key={s} value={s} data-testid={`option-status-${s.toLowerCase().replace(/\s+/g, "-")}`}>{s}</SelectItem>
+              ))}
+              <SelectItem value="New">New</SelectItem>
+              <SelectItem value="Reviewed">Reviewed</SelectItem>
+              <SelectItem value="Ready to Apply">Ready to Apply</SelectItem>
+              <SelectItem value="Skipped">Skipped</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div className="flex items-center gap-2">
           <Flag className={`h-4 w-4 ${priorityColor[job.priority] ?? ""}`} />
           <span className="text-sm text-muted-foreground">Priority:</span>
@@ -842,22 +851,6 @@ export default function JobDetail() {
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div className="flex items-center gap-2">
-          <Clock className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">Follow-up:</span>
-          <Input
-            type="date"
-            value={followUpDate}
-            onChange={(e) => setFollowUpDate(e.target.value)}
-            onBlur={() => {
-              if (followUpDate !== (job.followUpDate ?? "")) {
-                updateJob.mutate({ followUpDate });
-              }
-            }}
-            className="w-[160px]"
-            data-testid="input-followup-date"
-          />
         </div>
       </div>
 
@@ -900,6 +893,96 @@ export default function JobDetail() {
         </div>
 
         <div className="space-y-4">
+          {/* Application Tracking Card */}
+          <Card data-testid="card-application-tracking">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base font-medium flex items-center gap-1.5">
+                <Target className="h-4 w-4" />
+                Application Tracking
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Date Applied</Label>
+                  <Input
+                    type="date"
+                    value={dateApplied}
+                    onChange={(e) => setDateApplied(e.target.value)}
+                    onBlur={() => {
+                      if (dateApplied !== ((job as any).dateApplied ?? "")) {
+                        updateJob.mutate({ dateApplied });
+                      }
+                    }}
+                    className="h-8 text-xs"
+                    data-testid="input-date-applied"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Interview Date</Label>
+                  <Input
+                    type="date"
+                    value={interviewDate}
+                    onChange={(e) => setInterviewDate(e.target.value)}
+                    onBlur={() => {
+                      if (interviewDate !== ((job as any).interviewDate ?? "")) {
+                        updateJob.mutate({ interviewDate });
+                      }
+                    }}
+                    className="h-8 text-xs"
+                    data-testid="input-interview-date"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Follow-up Date</Label>
+                  <Input
+                    type="date"
+                    value={followUpDate}
+                    onChange={(e) => setFollowUpDate(e.target.value)}
+                    onBlur={() => {
+                      if (followUpDate !== (job.followUpDate ?? "")) {
+                        updateJob.mutate({ followUpDate });
+                      }
+                    }}
+                    className="h-8 text-xs"
+                    data-testid="input-followup-date"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Recruiter Name</Label>
+                <Input
+                  value={recruiterName}
+                  onChange={(e) => setRecruiterName(e.target.value)}
+                  onBlur={() => {
+                    if (recruiterName !== ((job as any).recruiterName ?? "")) {
+                      updateJob.mutate({ recruiterName });
+                    }
+                  }}
+                  placeholder="e.g. Jane Smith"
+                  className="h-8 text-xs"
+                  data-testid="input-recruiter-name"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Recruiter Email</Label>
+                <Input
+                  type="email"
+                  value={recruiterEmail}
+                  onChange={(e) => setRecruiterEmail(e.target.value)}
+                  onBlur={() => {
+                    if (recruiterEmail !== ((job as any).recruiterEmail ?? "")) {
+                      updateJob.mutate({ recruiterEmail });
+                    }
+                  }}
+                  placeholder="e.g. jane@company.com"
+                  className="h-8 text-xs"
+                  data-testid="input-recruiter-email"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
           <JobMatchAnalysis
             jobId={job.id}
             onOptimize={() => navigate(`/jobs/${job.id}/optimize`)}

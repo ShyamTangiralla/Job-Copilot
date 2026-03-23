@@ -64,6 +64,10 @@ export const jobs = pgTable("jobs", {
   priority: text("priority").notNull().default("Medium"),
   notes: text("notes").notNull().default(""),
   followUpDate: text("follow_up_date").notNull().default(""),
+  dateApplied: text("date_applied").notNull().default(""),
+  interviewDate: text("interview_date").notNull().default(""),
+  recruiterName: text("recruiter_name").notNull().default(""),
+  recruiterEmail: text("recruiter_email").notNull().default(""),
   importSource: text("import_source").notNull().default(""),
   importedAt: timestamp("imported_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -203,7 +207,8 @@ export const insertCoverLetterSchema = createInsertSchema(coverLetters).omit({ i
 export type InsertCoverLetter = z.infer<typeof insertCoverLetterSchema>;
 export type CoverLetter = typeof coverLetters.$inferSelect;
 
-export const JOB_STATUSES = ["New", "Reviewed", "Ready to Apply", "Applied", "Skipped", "Interview", "Rejected"] as const;
+export const JOB_STATUSES = ["New", "Reviewed", "Ready to Apply", "Saved", "Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response", "Skipped"] as const;
+export const APPLICATION_STATUSES = ["Saved", "Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response"] as const;
 export const ROLE_TYPES = ["Data Analyst", "Healthcare Data Analyst", "Healthcare Analyst", "Business Analyst", "Unknown"] as const;
 export const FIT_LABELS = ["Strong Match", "Possible Match", "Weak Match"] as const;
 export const WORK_MODES = ["Remote", "Hybrid", "Onsite"] as const;
