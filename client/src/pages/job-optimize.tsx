@@ -65,6 +65,31 @@ function kwPresent(text: string, kw: string): boolean {
   return new RegExp(`(?<![a-z0-9])${escapeRegex(kw)}(?![a-z0-9])`, "i").test(text);
 }
 
+const JD_SECTION_PATTERNS = [
+  /^(about (the role|this role|the position|us|the company))/i,
+  /^(job |role |position )?(summary|overview|description)/i,
+  /^(key |core |primary )?(responsibilities|duties|what you'?ll? (do|own|lead|build|drive))/i,
+  /^(required|minimum|basic) (qualifications?|requirements?|experience)/i,
+  /^(preferred|nice.to.have|bonus|additional) (qualifications?|skills?|experience|requirements?)/i,
+  /^(technical |required |key )?skills?( required| needed)?:?$/i,
+  /^(qualifications?|requirements?):?$/i,
+  /^(what we offer|benefits?|perks?|compensation|why join)/i,
+  /^(our (team|mission|culture|values))/i,
+  /^(experience( requirements?)?):?$/i,
+  /^(education( requirements?)?):?$/i,
+];
+
+function countJDSections(text: string): number {
+  const lines = text.split("\n");
+  let count = 0;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length < 4 || trimmed.length > 80) continue;
+    if (JD_SECTION_PATTERNS.some(p => p.test(trimmed))) count++;
+  }
+  return count;
+}
+
 function highlightText(text: string, greenKws: string[], redKws: string[]): React.ReactNode[] {
   if (!text || (!greenKws.length && !redKws.length)) return [text];
 
@@ -184,6 +209,8 @@ export default function JobOptimize() {
     () => (job?.description ? stripHtml(job.description) : job?.title ?? ""),
     [job]
   );
+
+  const jdSectionCount = useMemo(() => countJDSections(plainJobDesc), [plainJobDesc]);
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
@@ -513,10 +540,20 @@ export default function JobOptimize() {
               <CardTitle className="text-sm flex items-center gap-2">
                 <FileText className="h-4 w-4 text-muted-foreground" />Job Description
               </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                <span className="text-green-700 dark:text-green-400 font-medium">Green</span> = in resume ·{" "}
-                <span className="text-red-600 dark:text-red-400 font-medium">Red</span> = still missing
-              </p>
+              <div className="flex items-center justify-between flex-wrap gap-1">
+                <p className="text-xs text-muted-foreground">
+                  <span className="text-green-700 dark:text-green-400 font-medium">Green</span> = in resume ·{" "}
+                  <span className="text-red-600 dark:text-red-400 font-medium">Red</span> = still missing
+                </p>
+                {plainJobDesc.length > 0 && (
+                  <p className="text-xs text-muted-foreground" data-testid="jd-stats">
+                    {plainJobDesc.length.toLocaleString()} chars
+                    {jdSectionCount > 0 && (
+                      <> · {jdSectionCount} section{jdSectionCount !== 1 ? "s" : ""} detected</>
+                    )}
+                  </p>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="px-4 pb-4">
               <div className="text-sm leading-relaxed whitespace-pre-wrap max-h-[480px] overflow-y-auto pr-1" data-testid="panel-job-description">

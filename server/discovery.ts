@@ -176,7 +176,7 @@ async function searchGreenhouseJobs(roles: string[], config: DiscoveryConfig, si
           source: "Greenhouse",
           location,
           workMode: detectWorkMode(`${title} ${desc} ${location}`),
-          description: desc.substring(0, 5000),
+          description: desc.substring(0, 20000),
           applyLink,
           datePosted: gJob.updated_at?.split("T")[0] || new Date().toISOString().split("T")[0],
         };
@@ -235,7 +235,7 @@ async function searchLeverJobs(roles: string[], config: DiscoveryConfig, signal:
           source: "Lever",
           location,
           workMode: detectWorkMode(`${title} ${desc} ${location}`),
-          description: (typeof desc === "string" ? desc : "").substring(0, 5000),
+          description: (typeof desc === "string" ? desc : "").substring(0, 20000),
           applyLink,
           datePosted: posting.createdAt ? new Date(posting.createdAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
         };
@@ -296,7 +296,7 @@ async function searchGoogleJobs(roles: string[], config: DiscoveryConfig, signal
               const job: DiscoveredJob = {
                 title, company, source: "Google Jobs", location,
                 workMode: detectWorkMode(`${title} ${description} ${location}`),
-                description: description.substring(0, 5000),
+                description: description.substring(0, 20000),
                 applyLink, datePosted,
               };
 

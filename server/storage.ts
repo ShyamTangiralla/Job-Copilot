@@ -17,6 +17,22 @@ import { db } from "./db";
 import { eq, desc, and, ilike, sql } from "drizzle-orm";
 import { calculateATSScore } from "./ats";
 
+function serverStripHtml(html: string): string {
+  return html
+    .replace(/<\/?(li|p|br|div|h[1-6]|tr|td|th|ul|ol|section|article)[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&[a-z]+;/gi, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function normalizeUrl(url: string): string {
   try {
     const parsed = new URL(url);
@@ -146,7 +162,7 @@ export class DatabaseStorage implements IStorage {
     const { matchScoreNumeric: _, ...classified } = this.classifyAndScore(data, weights);
 
     let atsScore = 0;
-    const jobText = [data.title, data.description].filter(Boolean).join(" ").trim();
+    const jobText = [data.title, data.description ? serverStripHtml(data.description) : ""].filter(Boolean).join("\n").trim();
     if (jobText) {
       try {
         const [activeResume] = await db

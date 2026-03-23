@@ -189,8 +189,8 @@ export async function scrapeJobFromUrl(url: string): Promise<ScrapedJob> {
   const workMode = detectWorkMode(combinedText);
   const source = detectSource(url);
 
-  if (description.length > 5000) {
-    description = description.substring(0, 5000);
+  if (description.length > 20000) {
+    description = description.substring(0, 20000);
   }
 
   return {

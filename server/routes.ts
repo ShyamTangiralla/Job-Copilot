@@ -12,6 +12,26 @@ import { aiOptimizeResume, generateSuggestions, extractKeywords } from "./ai-opt
 import { searchLinkedInJobs } from "./linkedin-search";
 import { calculateATSBreakdown, calculateATSScore } from "./ats";
 
+/**
+ * Strip HTML tags and decode common entities for server-side text processing.
+ * Used whenever stored HTML job descriptions are passed to the scorer or AI.
+ */
+function serverStripHtml(html: string): string {
+  return html
+    .replace(/<\/?(li|p|br|div|h[1-6]|tr|td|th|ul|ol|section|article)[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&[a-z]+;/gi, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 const uploadsDir = path.join(process.cwd(), "uploads", "resumes");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -231,7 +251,7 @@ export async function registerRoutes(
       if (!activeResume || !job.description) {
         return res.json({ atsScore: job.atsScore ?? 0, technicalSkillsPct: 0, roleKeywordsPct: 0, domainKeywordsPct: 0, keywordAlignmentPct: 0, matchedSkills: [], missingSkills: [], matchedRoleKeywords: [], missingRoleKeywords: [], resumeName: activeResume?.name ?? null });
       }
-      const jobText = `${job.title} ${job.description}`;
+      const jobText = `${job.title}\n${serverStripHtml(job.description)}`;
       const breakdown = calculateATSBreakdown(activeResume.plainText || "", jobText);
       res.json({ ...breakdown, resumeName: activeResume.name });
     } catch (e: any) {
@@ -984,7 +1004,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Job has no description to analyze against." });
       }
 
-      const result = analyzeAndTailor(resume.plainText, job.description, job.roleClassification);
+      const result = analyzeAndTailor(resume.plainText, serverStripHtml(job.description), job.roleClassification);
 
       res.json({
         keywordAnalysis: result.keywordAnalysis,
