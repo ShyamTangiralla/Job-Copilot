@@ -1,0 +1,57 @@
+Fix Resume Optimization keyword highlighting and ATS scoring logic.
+
+Problems to fix:
+1. Keyword highlighting is broken. It is highlighting random single letters like "R" in green across the job description and tailored resume.
+2. ATS score improvement is too weak and not aligned with optimization results.
+3. The optimizer and scorer must use the same keyword logic.
+
+Required fixes:
+
+A. Highlighting fix
+1. Only highlight full keywords or full keyword phrases.
+2. Do NOT highlight partial letters, partial substrings, or individual characters.
+3. Use whole-word / phrase matching with case-insensitive comparison.
+4. Preserve clean highlighting for:
+   - matched keywords = green
+   - still missing keywords = red
+5. Ensure job description and tailored resume panels highlight only real matched phrases.
+
+B. ATS scoring fix
+1. Rework the ATS scoring formula so it evaluates the final tailored resume more fairly.
+2. Use consistent weighted scoring across:
+   - required technical skills / tools
+   - role-specific keywords
+   - domain keywords
+   - important phrase matches
+   - resume-job alignment
+3. Recalculate score only from the final tailored resume text after optimization.
+4. Make sure "still missing = 0" cannot happen while score remains artificially low unless weighting clearly explains it.
+5. Return a visible score breakdown showing which categories contributed to the score.
+
+C. Two-pass optimization strategy
+1. First pass:
+   - use only truthful, directly relevant keywords supported by existing resume/project/profile content
+2. If final score is still below 80:
+   - do a second safe enrichment pass
+   - allow insertion of adjacent job-description terms only if they can naturally fit existing skills, projects, coursework, or tools
+   - do not invent fake work experience
+   - do not add false achievements
+   - keep wording believable and human
+3. Show whether second-pass enrichment was used.
+
+D. UI additions
+1. Add an ATS score breakdown card:
+   - technical skills match
+   - role keywords match
+   - domain keywords match
+   - phrase/semantic alignment
+2. Add a note showing:
+   - "truthful-only optimization used"
+   - or "safe enrichment pass used"
+
+After implementation, summarize:
+- files changed
+- what caused the random letter highlighting bug
+- how whole-word matching is now handled
+- how the new ATS scoring formula works
+- where the second-pass enrichment logic is implemented

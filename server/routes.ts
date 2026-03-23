@@ -229,7 +229,7 @@ export async function registerRoutes(
       const resumes = await storage.getResumes();
       const activeResume = resumes.find(r => r.active) ?? resumes[0];
       if (!activeResume || !job.description) {
-        return res.json({ atsScore: job.atsScore ?? 0, keywordOverlapPct: 0, skillsOverlapPct: 0, roleKeywordOverlapPct: 0, matchedKeywords: [], matchedSkills: [], matchedRoleKeywords: [], missingSkills: [], resumeName: activeResume?.name ?? null });
+        return res.json({ atsScore: job.atsScore ?? 0, technicalSkillsPct: 0, roleKeywordsPct: 0, domainKeywordsPct: 0, keywordAlignmentPct: 0, matchedSkills: [], missingSkills: [], matchedRoleKeywords: [], missingRoleKeywords: [], resumeName: activeResume?.name ?? null });
       }
       const jobText = `${job.title} ${job.description}`;
       const breakdown = calculateATSBreakdown(activeResume.plainText || "", jobText);
@@ -882,14 +882,25 @@ export async function registerRoutes(
         }
       } else {
         const result = optimizeResume(resumeText, jobDescription);
-        const beforeScore = calculateATSScore(resumeText, jobDescription);
+        const beforeBreakdown = calculateATSBreakdown(resumeText, jobDescription);
         res.json({
           ...result,
           tailoredResume: undefined,
           addedKeywords: [],
           stillMissingKeywords: result.missingKeywords,
-          beforeScore,
-          afterScore: beforeScore,
+          beforeScore: beforeBreakdown.atsScore,
+          afterScore: beforeBreakdown.atsScore,
+          afterScoreBreakdown: {
+            technicalSkillsPct: beforeBreakdown.technicalSkillsPct,
+            roleKeywordsPct: beforeBreakdown.roleKeywordsPct,
+            domainKeywordsPct: beforeBreakdown.domainKeywordsPct,
+            keywordAlignmentPct: beforeBreakdown.keywordAlignmentPct,
+            matchedSkills: beforeBreakdown.matchedSkills,
+            missingSkills: beforeBreakdown.missingSkills,
+            matchedRoleKeywords: beforeBreakdown.matchedRoleKeywords,
+            missingRoleKeywords: beforeBreakdown.missingRoleKeywords,
+          },
+          usedEnrichmentPass: false,
         });
       }
     } catch (e: any) {
