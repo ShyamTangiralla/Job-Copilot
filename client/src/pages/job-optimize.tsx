@@ -212,7 +212,7 @@ export default function JobOptimize() {
     },
     onSuccess: (data) => {
       // Validate: filter suggestions whose currentText is still in the working resume
-      const current = workingResume || activeResume?.plainText ?? "";
+      const current = workingResume || (activeResume?.plainText ?? "");
       const valid = data.suggestions.filter(s => current.includes(s.currentText));
       setSuggestions(valid);
       setMissingKeywords(data.missingKeywords);
