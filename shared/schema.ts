@@ -207,6 +207,31 @@ export const insertCoverLetterSchema = createInsertSchema(coverLetters).omit({ i
 export type InsertCoverLetter = z.infer<typeof insertCoverLetterSchema>;
 export type CoverLetter = typeof coverLetters.$inferSelect;
 
+export const aiUsageLog = pgTable("ai_usage_log", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  feature: text("feature").notNull(),
+  jobId: integer("job_id"),
+  resumeId: integer("resume_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertAiUsageLogSchema = createInsertSchema(aiUsageLog).omit({ id: true, createdAt: true });
+export type InsertAiUsageLog = z.infer<typeof insertAiUsageLogSchema>;
+export type AiUsageLog = typeof aiUsageLog.$inferSelect;
+
+export const aiCache = pgTable("ai_cache", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  feature: text("feature").notNull(),
+  jobId: integer("job_id").notNull(),
+  resumeId: integer("resume_id"),
+  result: jsonb("result").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertAiCacheSchema = createInsertSchema(aiCache).omit({ id: true, createdAt: true });
+export type InsertAiCache = z.infer<typeof insertAiCacheSchema>;
+export type AiCache = typeof aiCache.$inferSelect;
+
 export const JOB_STATUSES = ["New", "Reviewed", "Ready to Apply", "Saved", "Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response", "Skipped"] as const;
 export const APPLICATION_STATUSES = ["Saved", "Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response"] as const;
 export const ROLE_TYPES = ["Data Analyst", "Healthcare Data Analyst", "Healthcare Analyst", "Business Analyst", "Unknown"] as const;

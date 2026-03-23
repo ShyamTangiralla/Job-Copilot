@@ -378,16 +378,27 @@ function CoverLetterGenerator({ job, resumes }: { job: Job; resumes: Resume[] })
         resumeText: resume.plainText,
         resumeId: resume.id,
       });
-      const data = await res.json() as { content: string };
+      const data = await res.json() as { content: string; cached?: boolean; code?: string; message?: string };
+      if (!res.ok) {
+        const err: any = new Error(data.message ?? "Generation failed");
+        err.code = data.code;
+        throw err;
+      }
       return data;
     },
     onSuccess: async (data) => {
       setContent(data.content);
-      await saveMutation.mutateAsync(data.content);
-      toast({ title: "Cover letter generated" });
+      if (!data.cached) {
+        await saveMutation.mutateAsync(data.content);
+      }
+      toast({ title: data.cached ? "Cover letter loaded from cache" : "Cover letter generated" });
     },
     onError: (e: any) => {
-      toast({ title: "Generation failed", description: e.message, variant: "destructive" });
+      if (e.code === "LIMIT_EXCEEDED") {
+        toast({ title: "AI limit reached", description: "Cover letter has been generated 2 times for this job.", variant: "destructive" });
+      } else {
+        toast({ title: "Generation failed", description: e.message, variant: "destructive" });
+      }
     },
   });
 

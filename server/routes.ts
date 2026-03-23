@@ -251,8 +251,14 @@ export async function registerRoutes(
       if (!activeResume || !job.description) {
         return res.json({ atsScore: job.atsScore ?? 0, technicalSkillsPct: 0, roleKeywordsPct: 0, domainKeywordsPct: 0, keywordAlignmentPct: 0, matchedSkills: [], missingSkills: [], matchedRoleKeywords: [], missingRoleKeywords: [], resumeName: activeResume?.name ?? null });
       }
+      const cached = await storage.getAiCache("job-match", id);
+      if (cached) {
+        return res.json({ ...(cached.result as object), resumeName: activeResume.name, cached: true });
+      }
       const jobText = `${job.title}\n${serverStripHtml(job.description)}`;
       const breakdown = calculateATSBreakdown(activeResume.plainText || "", jobText);
+      await storage.setAiCache("job-match", id, breakdown);
+      await storage.logAiUsage("job-match", id, activeResume.id);
       res.json({ ...breakdown, resumeName: activeResume.name });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -304,6 +310,8 @@ export async function registerRoutes(
       }
 
       const updated = await storage.updateJob(id, { description: fullDescription });
+      // Clear cached ATS analysis so it re-runs with the new description
+      await storage.clearAiCache("job-match", id).catch(() => {});
       res.json({ job: updated, chars: fullDescription.length });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -414,6 +422,15 @@ export async function registerRoutes(
       const id = parseInt(req.params.id);
       await storage.deleteAnswer(id);
       res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/ai-usage", async (_req, res) => {
+    try {
+      const stats = await storage.getAiUsageStats();
+      res.json(stats);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
@@ -982,9 +999,25 @@ export async function registerRoutes(
   // Generate interactive keyword suggestions for a resume + job description
   app.post("/api/generate-suggestions", async (req, res) => {
     try {
-      const { jobDescription, resumeText } = req.body;
+      const { jobDescription, resumeText, jobId, sessionStart } = req.body;
       if (!jobDescription || !resumeText) {
         return res.status(400).json({ message: "jobDescription and resumeText are required" });
+      }
+
+      // Enforce limit of 2 optimization sessions per job (only on session starts)
+      if (jobId && sessionStart) {
+        const parsedJobId = parseInt(jobId);
+        if (!isNaN(parsedJobId)) {
+          const usageCount = await storage.getAiUsageCount("resume-optimization", parsedJobId);
+          if (usageCount >= 2) {
+            return res.status(429).json({
+              message: "AI usage limit reached. Resume optimization has been used 2 times for this job.",
+              code: "LIMIT_EXCEEDED",
+              usageCount,
+              limit: 2,
+            });
+          }
+        }
       }
 
       // Compute missing keywords using the same scorer (no AI needed for detection)
@@ -1002,6 +1035,13 @@ export async function registerRoutes(
 
       try {
         const suggestions = await generateSuggestions(resumeText, jobDescription, missingKeywords);
+        // Log AI usage for session starts
+        if (jobId && sessionStart) {
+          const parsedJobId = parseInt(jobId);
+          if (!isNaN(parsedJobId)) {
+            await storage.logAiUsage("resume-optimization", parsedJobId);
+          }
+        }
         res.json({ suggestions, missingKeywords, noAiKey: false });
       } catch (aiErr: any) {
         const msg: string = aiErr?.message ?? "";
@@ -1190,7 +1230,27 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Resume or Job Description missing." });
       }
 
+      // Return cached cover letter if already generated for this job+resume combo
+      const parsedResumeId = resumeId ? parseInt(resumeId) : undefined;
+      const cached = await storage.getAiCache("cover-letter", jobId, parsedResumeId);
+      if (cached) {
+        return res.json({ content: (cached.result as any).content, cached: true });
+      }
+
+      // Enforce limit of 2 cover letter generations per job
+      const usageCount = await storage.getAiUsageCount("cover-letter", jobId);
+      if (usageCount >= 2) {
+        return res.status(429).json({
+          message: "AI usage limit reached. Cover letter has been generated 2 times for this job.",
+          code: "LIMIT_EXCEEDED",
+          usageCount,
+          limit: 2,
+        });
+      }
+
       const content = await generateCoverLetter(resumeText, cleanDesc, job.company, job.title);
+      await storage.setAiCache("cover-letter", jobId, { content }, parsedResumeId);
+      await storage.logAiUsage("cover-letter", jobId, parsedResumeId);
       res.json({ content });
     } catch (e: any) {
       if (e.status === 402 || e.code === "insufficient_quota") {

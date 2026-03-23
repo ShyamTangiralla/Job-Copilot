@@ -10,8 +10,9 @@ import {
   type DiscoveryResult, type InsertDiscoveryResult,
   type TailoredResume, type InsertTailoredResume,
   type CoverLetter, type InsertCoverLetter,
+  type AiCache,
   candidateProfile, resumes, jobs, applicationAnswers, activityLog, settings, importLog,
-  discoveryRuns, discoveryResults, tailoredResumes, coverLetters,
+  discoveryRuns, discoveryResults, tailoredResumes, coverLetters, aiUsageLog, aiCache,
   ROLE_TYPES,
 } from "@shared/schema";
 import { db } from "./db";
@@ -112,6 +113,13 @@ export interface IStorage {
   getCoverLetter(jobId: number): Promise<CoverLetter | undefined>;
   upsertCoverLetter(data: InsertCoverLetter): Promise<CoverLetter>;
   deleteCoverLetter(jobId: number): Promise<void>;
+
+  logAiUsage(feature: string, jobId?: number, resumeId?: number): Promise<void>;
+  getAiUsageCount(feature: string, jobId: number): Promise<number>;
+  getAiUsageStats(): Promise<{ total: number; byFeature: Record<string, number> }>;
+  getAiCache(feature: string, jobId: number, resumeId?: number): Promise<AiCache | undefined>;
+  setAiCache(feature: string, jobId: number, result: any, resumeId?: number): Promise<void>;
+  clearAiCache(feature: string, jobId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -651,6 +659,56 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCoverLetter(jobId: number): Promise<void> {
     await db.delete(coverLetters).where(eq(coverLetters.jobId, jobId));
+  }
+
+  async logAiUsage(feature: string, jobId?: number, resumeId?: number): Promise<void> {
+    await db.insert(aiUsageLog).values({ feature, jobId, resumeId });
+  }
+
+  async getAiUsageCount(feature: string, jobId: number): Promise<number> {
+    const rows = await db
+      .select({ count: sql<number>`cast(count(*) as int)` })
+      .from(aiUsageLog)
+      .where(and(eq(aiUsageLog.feature, feature), eq(aiUsageLog.jobId, jobId)));
+    return rows[0]?.count ?? 0;
+  }
+
+  async getAiUsageStats(): Promise<{ total: number; byFeature: Record<string, number> }> {
+    const rows = await db
+      .select({ feature: aiUsageLog.feature, count: sql<number>`cast(count(*) as int)` })
+      .from(aiUsageLog)
+      .groupBy(aiUsageLog.feature);
+    const byFeature: Record<string, number> = {};
+    let total = 0;
+    for (const row of rows) {
+      byFeature[row.feature] = row.count;
+      total += row.count;
+    }
+    return { total, byFeature };
+  }
+
+  async getAiCache(feature: string, jobId: number, resumeId?: number): Promise<AiCache | undefined> {
+    const conditions = resumeId != null
+      ? and(eq(aiCache.feature, feature), eq(aiCache.jobId, jobId), eq(aiCache.resumeId, resumeId))
+      : and(eq(aiCache.feature, feature), eq(aiCache.jobId, jobId));
+    const rows = await db.select().from(aiCache).where(conditions).orderBy(desc(aiCache.createdAt)).limit(1);
+    return rows[0];
+  }
+
+  async setAiCache(feature: string, jobId: number, result: any, resumeId?: number): Promise<void> {
+    const conditions = resumeId != null
+      ? and(eq(aiCache.feature, feature), eq(aiCache.jobId, jobId), eq(aiCache.resumeId, resumeId))
+      : and(eq(aiCache.feature, feature), eq(aiCache.jobId, jobId));
+    const existing = await db.select({ id: aiCache.id }).from(aiCache).where(conditions).limit(1);
+    if (existing.length > 0) {
+      await db.update(aiCache).set({ result, createdAt: new Date() }).where(eq(aiCache.id, existing[0].id));
+    } else {
+      await db.insert(aiCache).values({ feature, jobId, resumeId, result });
+    }
+  }
+
+  async clearAiCache(feature: string, jobId: number): Promise<void> {
+    await db.delete(aiCache).where(and(eq(aiCache.feature, feature), eq(aiCache.jobId, jobId)));
   }
 }
 

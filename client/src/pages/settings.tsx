@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Settings as SettingsIcon, Plus, X, RefreshCw, Target } from "lucide-react";
+import { Settings as SettingsIcon, Plus, X, RefreshCw, Target, Sparkles, Brain, FileText, BarChart3 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
@@ -43,6 +43,10 @@ export default function SettingsPage() {
 
   const { data: savedWeights } = useQuery<ScoringWeights>({
     queryKey: ["/api/scoring-weights"],
+  });
+
+  const { data: aiUsage } = useQuery<{ total: number; byFeature: Record<string, number> }>({
+    queryKey: ["/api/ai-usage"],
   });
 
   useEffect(() => {
@@ -292,6 +296,55 @@ export default function SettingsPage() {
               </>
             )}
           </Button>
+        </CardContent>
+      </Card>
+
+      <Separator />
+
+      <Card data-testid="card-ai-usage">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-medium flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-violet-500" />
+            AI Usage
+          </CardTitle>
+          <CardDescription>
+            Tracks how many times AI features have been used. Limits: Resume optimization (2/job), Cover letter (2/job), Job match analysis (cached after first run).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="space-y-1 text-center p-3 rounded-lg bg-muted/40" data-testid="stat-ai-total">
+              <div className="text-2xl font-semibold tabular-nums">{aiUsage?.total ?? 0}</div>
+              <div className="text-xs text-muted-foreground">Total AI Calls</div>
+            </div>
+            <div className="space-y-1 text-center p-3 rounded-lg bg-muted/40" data-testid="stat-ai-resume-optimization">
+              <div className="text-2xl font-semibold tabular-nums text-violet-600 dark:text-violet-400">
+                {aiUsage?.byFeature?.["resume-optimization"] ?? 0}
+              </div>
+              <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+                <Brain className="h-3 w-3" />
+                Resume Opt.
+              </div>
+            </div>
+            <div className="space-y-1 text-center p-3 rounded-lg bg-muted/40" data-testid="stat-ai-cover-letter">
+              <div className="text-2xl font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                {aiUsage?.byFeature?.["cover-letter"] ?? 0}
+              </div>
+              <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+                <FileText className="h-3 w-3" />
+                Cover Letter
+              </div>
+            </div>
+            <div className="space-y-1 text-center p-3 rounded-lg bg-muted/40" data-testid="stat-ai-job-match">
+              <div className="text-2xl font-semibold tabular-nums text-cyan-600 dark:text-cyan-400">
+                {aiUsage?.byFeature?.["job-match"] ?? 0}
+              </div>
+              <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+                <BarChart3 className="h-3 w-3" />
+                Job Match
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>

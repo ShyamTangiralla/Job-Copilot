@@ -254,16 +254,21 @@ export default function JobOptimize() {
     },
   });
 
+  const [limitReached, setLimitReached] = useState(false);
+
   /** AI suggestion generation — called on load + after every Accept/Undo. */
   const suggestionMutation = useMutation({
-    mutationFn: async (resumeText: string) => {
+    mutationFn: async ({ resumeText, isSessionStart }: { resumeText: string; isSessionStart?: boolean }) => {
       const res = await apiRequest("POST", "/api/generate-suggestions", {
         jobDescription: plainJobDesc,
         resumeText,
+        jobId,
+        sessionStart: isSessionStart ?? false,
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         if (res.status === 402 || body.code === "QUOTA_EXCEEDED") throw Object.assign(new Error("quota"), { code: "QUOTA_EXCEEDED" });
+        if (res.status === 429 || body.code === "LIMIT_EXCEEDED") throw Object.assign(new Error(body.message ?? "limit"), { code: "LIMIT_EXCEEDED" });
         throw new Error(body.message ?? "Failed");
       }
       return res.json() as Promise<{ suggestions: Suggestion[]; missingKeywords: string[]; noAiKey: boolean }>;
@@ -279,6 +284,7 @@ export default function JobOptimize() {
     },
     onError: (error: any) => {
       if (error.code === "QUOTA_EXCEEDED") { setQuotaError(true); return; }
+      if (error.code === "LIMIT_EXCEEDED") { setLimitReached(true); return; }
       toast({ title: "Could not generate suggestions.", description: error.message, variant: "destructive" });
     },
   });
@@ -306,12 +312,12 @@ export default function JobOptimize() {
 
   // ── Auto-start ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (job && activeResume?.plainText && !hasStarted && !quotaError) {
+    if (job && activeResume?.plainText && !hasStarted && !quotaError && !limitReached) {
       setHasStarted(true);
       setWorkingResume(activeResume.plainText);
-      suggestionMutation.mutate(activeResume.plainText);
+      suggestionMutation.mutate({ resumeText: activeResume.plainText, isSessionStart: true });
     }
-  }, [job, activeResume, hasStarted, quotaError]);
+  }, [job, activeResume, hasStarted, quotaError, limitReached]);
 
   // ── Accept ─────────────────────────────────────────────────────────────────
   const handleAccept = useCallback((suggestion: Suggestion) => {
@@ -320,7 +326,7 @@ export default function JobOptimize() {
       toast({ title: "Suggestion outdated — refreshing…" });
       setSuggestions([]);
       setStatus({});
-      suggestionMutation.mutate(workingResume);
+      suggestionMutation.mutate({ resumeText: workingResume });
       return;
     }
 
@@ -339,7 +345,7 @@ export default function JobOptimize() {
 
     // Fire both in parallel: fast score + AI suggestion refresh
     scoreMutation.mutate(newResume);
-    suggestionMutation.mutate(newResume);
+    suggestionMutation.mutate({ resumeText: newResume });
   }, [workingResume, plainJobDesc]);
 
   // ── Ignore (local — no regeneration needed) ────────────────────────────────
@@ -377,7 +383,7 @@ export default function JobOptimize() {
 
     // Refresh score + suggestions for reverted resume
     scoreMutation.mutate(prevResume);
-    suggestionMutation.mutate(prevResume);
+    suggestionMutation.mutate({ resumeText: prevResume });
   }, [resumeHistory, editHistory, plainJobDesc]);
 
   // ── Keyword highlights (dynamic, based on current working resume) ───────────
@@ -561,6 +567,17 @@ export default function JobOptimize() {
         </Card>
       )}
 
+      {/* AI usage limit reached */}
+      {limitReached && (
+        <Card className="border-orange-200 dark:border-orange-800">
+          <CardContent className="py-6 text-center">
+            <AlertCircle className="h-8 w-8 mx-auto text-orange-500 mb-2" />
+            <p className="font-medium mb-1">AI Optimization Limit Reached</p>
+            <p className="text-sm text-muted-foreground">Resume optimization has been used 2 times for this job. The job description or resume view is still available below.</p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* 2-column: Job Description | Working Resume */}
       {!quotaError && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -643,7 +660,7 @@ export default function JobOptimize() {
       )}
 
       {/* Suggestions panel */}
-      {!quotaError && (
+      {!quotaError && !limitReached && (
         <div className="space-y-3">
 
           {/* Panel header */}
@@ -666,7 +683,7 @@ export default function JobOptimize() {
                 size="sm"
                 variant="ghost"
                 className="h-7 gap-1.5 text-xs text-muted-foreground"
-                onClick={() => { setSuggestions([]); setStatus({}); suggestionMutation.mutate(workingResume); }}
+                onClick={() => { setSuggestions([]); setStatus({}); suggestionMutation.mutate({ resumeText: workingResume }); }}
                 disabled={isRegenerating}
                 data-testid="button-refresh-suggestions"
               >
