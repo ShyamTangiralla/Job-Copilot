@@ -52,9 +52,20 @@ type SuggestionStatus = "pending" | "ignored";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function stripHtml(html: string): string {
-  const div = document.createElement("div");
-  div.innerHTML = html;
-  return div.textContent || div.innerText || "";
+  return html
+    .replace(/<\/?(li|p|br|div|h[1-6]|tr|td|th|ul|ol|section|article)[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&[a-z]+;/gi, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function escapeRegex(s: string) {
@@ -221,6 +232,26 @@ export default function JobOptimize() {
       return res.json() as Promise<ATSBreakdown>;
     },
     onSuccess: (data) => setLiveBreakdown(data),
+  });
+
+  /** Re-fetch the full job description from the source URL. */
+  const refreshDescMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/jobs/${jobId}/refresh-description`, {});
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message ?? "Failed to refresh description");
+      }
+      return res.json() as Promise<{ chars: number }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobId, "ats-breakdown"] });
+      toast({ title: "Description refreshed", description: `Loaded ${data.chars.toLocaleString()} characters from source.` });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Refresh failed", description: err.message, variant: "destructive" });
+    },
   });
 
   /** AI suggestion generation — called on load + after every Accept/Undo. */
@@ -537,22 +568,37 @@ export default function JobOptimize() {
           {/* Left: Job Description */}
           <Card>
             <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />Job Description
-              </CardTitle>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-muted-foreground" />Job Description
+                </CardTitle>
+                {job?.applyLink && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => refreshDescMutation.mutate()}
+                    disabled={refreshDescMutation.isPending}
+                    data-testid="button-refresh-jd"
+                    title="Re-fetch full description from source"
+                  >
+                    {refreshDescMutation.isPending
+                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                      : <RefreshCw className="h-3 w-3" />}
+                    <span className="ml-1">{refreshDescMutation.isPending ? "Fetching…" : "Refresh"}</span>
+                  </Button>
+                )}
+              </div>
               <div className="flex items-center justify-between flex-wrap gap-1">
                 <p className="text-xs text-muted-foreground">
                   <span className="text-green-700 dark:text-green-400 font-medium">Green</span> = in resume ·{" "}
                   <span className="text-red-600 dark:text-red-400 font-medium">Red</span> = still missing
                 </p>
-                {plainJobDesc.length > 0 && (
-                  <p className="text-xs text-muted-foreground" data-testid="jd-stats">
-                    {plainJobDesc.length.toLocaleString()} chars
-                    {jdSectionCount > 0 && (
-                      <> · {jdSectionCount} section{jdSectionCount !== 1 ? "s" : ""} detected</>
-                    )}
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground" data-testid="jd-stats">
+                  {plainJobDesc.length > 0
+                    ? <>{plainJobDesc.length.toLocaleString()} chars{jdSectionCount > 0 && <> · {jdSectionCount} section{jdSectionCount !== 1 ? "s" : ""}</>}</>
+                    : "No description stored"}
+                </p>
               </div>
             </CardHeader>
             <CardContent className="px-4 pb-4">

@@ -259,6 +259,57 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/jobs/:id/refresh-description", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const job = await storage.getJob(id);
+      if (!job) return res.status(404).json({ message: "Job not found" });
+
+      if (!job.applyLink) {
+        return res.status(400).json({ message: "No apply link available to refresh from." });
+      }
+
+      let fullDescription = "";
+
+      // Greenhouse board API gives us the full HTML description directly
+      const ghMatch = job.applyLink.match(/(?:job-boards|boards)\.greenhouse\.io\/([^/]+)\/jobs\/(\d+)/);
+      if (ghMatch) {
+        const [, board, jobId] = ghMatch;
+        try {
+          const apiRes = await fetch(
+            `https://boards-api.greenhouse.io/v1/boards/${board}/jobs/${jobId}`,
+            { headers: { Accept: "application/json" } }
+          );
+          if (apiRes.ok) {
+            const jobData = await apiRes.json() as { content?: string };
+            if (jobData.content) fullDescription = jobData.content;
+          }
+        } catch {
+          // Fall through to scraper
+        }
+      }
+
+      // For non-Greenhouse URLs, or if the API failed, scrape the apply link page
+      if (!fullDescription) {
+        try {
+          const scraped = await scrapeJobFromUrl(job.applyLink);
+          fullDescription = scraped.description;
+        } catch (scrapeErr: any) {
+          return res.status(500).json({ message: `Could not fetch description: ${scrapeErr.message}` });
+        }
+      }
+
+      if (!fullDescription) {
+        return res.status(500).json({ message: "No description content found at the source URL." });
+      }
+
+      const updated = await storage.updateJob(id, { description: fullDescription });
+      res.json({ job: updated, chars: fullDescription.length });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   app.post("/api/jobs/check-duplicate", async (req, res) => {
     try {
       const { title, company, applyLink } = req.body;
