@@ -374,11 +374,12 @@ function CoverLetterGenerator({ job, resumes }: { job: Job; resumes: Resume[] })
     mutationFn: async () => {
       const resume = activeResumes.find(r => String(r.id) === selectedResumeId);
       if (!resume) throw new Error("Please select a resume first");
-      const data = await apiRequest("POST", `/api/jobs/${job.id}/cover-letter/generate`, {
+      const res = await apiRequest("POST", `/api/jobs/${job.id}/cover-letter/generate`, {
         resumeText: resume.plainText,
         resumeId: resume.id,
       });
-      return data as { content: string };
+      const data = await res.json() as { content: string };
+      return data;
     },
     onSuccess: async (data) => {
       setContent(data.content);

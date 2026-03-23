@@ -1179,13 +1179,17 @@ export async function registerRoutes(
 
       const { resumeText, resumeId } = req.body;
       if (!resumeText || typeof resumeText !== "string" || !resumeText.trim()) {
-        return res.status(400).json({ message: "resumeText is required" });
+        return res.status(400).json({ message: "Resume or Job Description missing." });
       }
 
       const job = await storage.getJob(jobId);
       if (!job) return res.status(404).json({ message: "Job not found" });
 
       const cleanDesc = serverStripHtml(job.description);
+      if (!cleanDesc.trim()) {
+        return res.status(400).json({ message: "Resume or Job Description missing." });
+      }
+
       const content = await generateCoverLetter(resumeText, cleanDesc, job.company, job.title);
       res.json({ content });
     } catch (e: any) {
