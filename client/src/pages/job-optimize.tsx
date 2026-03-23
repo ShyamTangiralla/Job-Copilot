@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +18,9 @@ import {
   AlertCircle,
   Download,
   Save,
+  TrendingUp,
+  ArrowRight,
+  Info,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -34,6 +37,10 @@ interface OptimizeResult {
   tailoredResume?: string;
   missingKeywords: string[];
   skillsToHighlight: string[];
+  addedKeywords: string[];
+  stillMissingKeywords: string[];
+  beforeScore: number;
+  afterScore: number;
   improvedSummary?: string;
   improvedBullets?: { original: string; improved: string; reason: string }[];
 }
@@ -52,6 +59,77 @@ function stripHtml(html: string): string {
   const div = document.createElement("div");
   div.innerHTML = html;
   return div.textContent || div.innerText || "";
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function highlightText(
+  text: string,
+  greenKws: string[],
+  redKws: string[]
+): React.ReactNode[] {
+  if (!text || (greenKws.length === 0 && redKws.length === 0)) return [text];
+
+  const allKws = [
+    ...greenKws.map(k => ({ kw: k, color: "green" as const })),
+    ...redKws.map(k => ({ kw: k, color: "red" as const })),
+  ].sort((a, b) => b.kw.length - a.kw.length);
+
+  const escaped = allKws.map(k => escapeRegex(k.kw));
+  const regex = new RegExp(`(${escaped.join("|")})`, "gi");
+  const parts = text.split(regex);
+
+  return parts.map((part, i) => {
+    const lower = part.toLowerCase();
+    if (greenKws.some(k => k.toLowerCase() === lower)) {
+      return (
+        <mark
+          key={i}
+          className="bg-green-200 dark:bg-green-900/70 text-green-900 dark:text-green-200 rounded-sm px-0.5 not-italic font-semibold"
+        >
+          {part}
+        </mark>
+      );
+    }
+    if (redKws.some(k => k.toLowerCase() === lower)) {
+      return (
+        <mark
+          key={i}
+          className="bg-red-200 dark:bg-red-900/70 text-red-900 dark:text-red-200 rounded-sm px-0.5 not-italic font-medium"
+        >
+          {part}
+        </mark>
+      );
+    }
+    return part;
+  });
+}
+
+function renderHighlightedMultiline(
+  text: string,
+  greenKws: string[],
+  redKws: string[]
+): React.ReactNode {
+  return text.split("\n").map((line, i, arr) => (
+    <span key={i}>
+      {highlightText(line, greenKws, redKws)}
+      {i < arr.length - 1 && "\n"}
+    </span>
+  ));
+}
+
+function scoreColor(score: number) {
+  if (score >= 70) return "text-green-700 dark:text-green-400";
+  if (score >= 40) return "text-yellow-600 dark:text-yellow-400";
+  return "text-red-600 dark:text-red-400";
+}
+
+function scoreProgressColor(score: number) {
+  if (score >= 70) return "[&>div]:bg-green-500";
+  if (score >= 40) return "[&>div]:bg-yellow-500";
+  return "[&>div]:bg-red-500";
 }
 
 export default function JobOptimize() {
@@ -141,38 +219,34 @@ export default function JobOptimize() {
     });
   };
 
-  const copyKeywordSummary = () => {
-    if (!optimizeResult) return;
-    const lines: string[] = [];
-    lines.push(`Resume Optimization — ${job?.title} at ${job?.company}`);
-    lines.push("");
-    if (optimizeResult.skillsToHighlight.length > 0) {
-      lines.push("SKILLS TO HIGHLIGHT:");
-      lines.push(optimizeResult.skillsToHighlight.join(", "));
-      lines.push("");
-    }
-    if (optimizeResult.missingKeywords.length > 0) {
-      lines.push("MISSING KEYWORDS:");
-      lines.push(optimizeResult.missingKeywords.join(", "));
-    }
-    navigator.clipboard.writeText(lines.join("\n")).then(() => {
-      toast({ title: "Keyword summary copied" });
-    });
-  };
-
   const isLoading = jobLoading || optimizeMutation.isPending;
 
-  const atsScore = atsBreakdown?.atsScore ?? job?.atsScore ?? 0;
-  const atsColor = atsScore >= 70
-    ? "text-green-700 dark:text-green-400"
-    : atsScore >= 40
-    ? "text-yellow-600 dark:text-yellow-400"
-    : "text-red-600 dark:text-red-400";
-  const atsProgressColor = atsScore >= 70 ? "[&>div]:bg-green-500" : atsScore >= 40 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-red-500";
+  const plainJobDesc = useMemo(
+    () => (job?.description ? stripHtml(job.description) : job?.title ?? ""),
+    [job]
+  );
+
+  const beforeScore = optimizeResult?.beforeScore ?? atsBreakdown?.atsScore ?? job?.atsScore ?? 0;
+  const afterScore = optimizeResult?.afterScore ?? 0;
+  const scoreDelta = optimizeResult ? afterScore - beforeScore : 0;
+  const hasResults = !!optimizeResult?.tailoredResume;
+
+  const jdGreenKws = useMemo(
+    () => hasResults ? [...(optimizeResult?.skillsToHighlight ?? []), ...(optimizeResult?.addedKeywords ?? [])] : [],
+    [optimizeResult, hasResults]
+  );
+  const jdRedKws = useMemo(
+    () => hasResults ? (optimizeResult?.stillMissingKeywords ?? []) : [],
+    [optimizeResult, hasResults]
+  );
+  const resumeGreenKws = useMemo(
+    () => hasResults ? [...(optimizeResult?.skillsToHighlight ?? []), ...(optimizeResult?.addedKeywords ?? [])] : [],
+    [optimizeResult, hasResults]
+  );
 
   if (jobLoading) {
     return (
-      <div className="p-8 max-w-4xl mx-auto space-y-4">
+      <div className="p-8 max-w-5xl mx-auto space-y-4">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-6 w-96" />
         <Skeleton className="h-32 w-full mt-4" />
@@ -192,7 +266,7 @@ export default function JobOptimize() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-5">
+    <div className="p-6 max-w-7xl mx-auto space-y-5">
       <div className="flex items-center gap-3">
         <Button
           variant="ghost"
@@ -226,64 +300,123 @@ export default function JobOptimize() {
         </div>
       </div>
 
+      {/* ATS Score Card */}
       <Card>
         <CardContent className="p-5">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-            <div className="flex-1">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <Target className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">ATS Match Score</span>
+          {hasResults ? (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-5">
+              {/* Before → After scores */}
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Before</p>
+                  <span className={`text-2xl font-bold ${scoreColor(beforeScore)}`}>{beforeScore}%</span>
                 </div>
-                {atsLoading ? (
-                  <Skeleton className="h-5 w-16" />
-                ) : (
-                  <span className={`text-xl font-bold ${atsColor}`}>{atsScore}%</span>
+                <ArrowRight className="h-5 w-5 text-muted-foreground" />
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground mb-1">After</p>
+                  <span className={`text-2xl font-bold ${scoreColor(afterScore)}`}>{afterScore}%</span>
+                </div>
+                {scoreDelta !== 0 && (
+                  <Badge
+                    className={`text-sm font-semibold ${
+                      scoreDelta > 0
+                        ? "bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800"
+                        : "bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800"
+                    }`}
+                    data-testid="badge-score-delta"
+                  >
+                    {scoreDelta > 0 ? "+" : ""}{scoreDelta}
+                  </Badge>
                 )}
               </div>
-              <Progress value={atsScore} className={`h-2.5 ${atsProgressColor}`} />
-            </div>
 
-            {atsBreakdown && !atsLoading && (
-              <>
-                <Separator orientation="vertical" className="hidden sm:block h-12" />
-                <div className="grid grid-cols-3 gap-3 text-sm flex-1">
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-muted-foreground text-xs">Keywords</span>
-                      <span className="font-medium text-xs">{atsBreakdown.keywordOverlapPct}%</span>
-                    </div>
-                    <Progress value={atsBreakdown.keywordOverlapPct} className="h-1.5" />
-                  </div>
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-muted-foreground text-xs">Skills</span>
-                      <span className="font-medium text-xs">{atsBreakdown.skillsOverlapPct}%</span>
-                    </div>
-                    <Progress value={atsBreakdown.skillsOverlapPct} className="h-1.5" />
-                  </div>
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <span className="text-muted-foreground text-xs">Role KW</span>
-                      <span className="font-medium text-xs">{atsBreakdown.roleKeywordOverlapPct}%</span>
-                    </div>
-                    <Progress value={atsBreakdown.roleKeywordOverlapPct} className="h-1.5" />
-                  </div>
+              <Separator orientation="vertical" className="hidden sm:block h-12" />
+
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-4 flex-1 text-center">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Keywords Added</p>
+                  <Badge className="bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 text-sm font-bold" data-testid="badge-keywords-added">
+                    +{optimizeResult.addedKeywords.length}
+                  </Badge>
                 </div>
-              </>
-            )}
-          </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Still Missing</p>
+                  <Badge className={`text-sm font-bold ${optimizeResult.stillMissingKeywords.length === 0 ? "bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800" : "bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800"}`} data-testid="badge-still-missing">
+                    {optimizeResult.stillMissingKeywords.length}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Highlights</p>
+                  <Badge className="bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800 text-sm font-bold" data-testid="badge-highlighted">
+                    {optimizeResult.skillsToHighlight.length}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <div className="flex-1">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Target className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">ATS Match Score</span>
+                  </div>
+                  {atsLoading ? (
+                    <Skeleton className="h-5 w-16" />
+                  ) : (
+                    <span className={`text-xl font-bold ${scoreColor(beforeScore)}`}>{beforeScore}%</span>
+                  )}
+                </div>
+                <Progress value={beforeScore} className={`h-2.5 ${scoreProgressColor(beforeScore)}`} />
+              </div>
+              {atsBreakdown && !atsLoading && (
+                <>
+                  <Separator orientation="vertical" className="hidden sm:block h-12" />
+                  <div className="grid grid-cols-3 gap-3 text-sm flex-1">
+                    <div>
+                      <div className="flex justify-between mb-1">
+                        <span className="text-muted-foreground text-xs">Keywords</span>
+                        <span className="font-medium text-xs">{atsBreakdown.keywordOverlapPct}%</span>
+                      </div>
+                      <Progress value={atsBreakdown.keywordOverlapPct} className="h-1.5" />
+                    </div>
+                    <div>
+                      <div className="flex justify-between mb-1">
+                        <span className="text-muted-foreground text-xs">Skills</span>
+                        <span className="font-medium text-xs">{atsBreakdown.skillsOverlapPct}%</span>
+                      </div>
+                      <Progress value={atsBreakdown.skillsOverlapPct} className="h-1.5" />
+                    </div>
+                    <div>
+                      <div className="flex justify-between mb-1">
+                        <span className="text-muted-foreground text-xs">Role KW</span>
+                        <span className="font-medium text-xs">{atsBreakdown.roleKeywordOverlapPct}%</span>
+                      </div>
+                      <Progress value={atsBreakdown.roleKeywordOverlapPct} className="h-1.5" />
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Score improvement note */}
+      {hasResults && scoreDelta < 15 && (
+        <div className="flex items-start gap-2 text-sm text-muted-foreground bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3" data-testid="note-limited-optimization">
+          <Info className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+          <span>Optimization was limited by truthfulness and available experience. Keywords not added are shown in red in the job description panel.</span>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="space-y-4">
           <Card>
             <CardContent className="py-8 px-6">
               <div className="flex flex-col items-center gap-3 text-center">
-                <div className="relative">
-                  <Sparkles className="h-8 w-8 text-violet-500 animate-pulse" />
-                </div>
+                <Sparkles className="h-8 w-8 text-violet-500 animate-pulse" />
                 <p className="font-medium">AI is tailoring your resume…</p>
                 <p className="text-sm text-muted-foreground max-w-sm">
                   Analyzing the job description, identifying missing keywords, and rewriting your resume to be more competitive. This takes about 15–30 seconds.
@@ -324,162 +457,251 @@ export default function JobOptimize() {
           </CardContent>
         </Card>
       ) : optimizeResult ? (
-        <div className="space-y-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Card>
-              <CardHeader className="pb-3 pt-5 px-5">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <XCircle className="h-4 w-4 text-red-500" />
-                  Missing Keywords
-                  <Badge variant="secondary" className="ml-auto text-xs">{optimizeResult.missingKeywords.length}</Badge>
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">In the job description but not in your resume.</p>
-              </CardHeader>
-              <CardContent className="px-5 pb-5">
-                {optimizeResult.missingKeywords.length === 0 ? (
-                  <p className="text-sm text-muted-foreground italic">No missing keywords — great coverage!</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {optimizeResult.missingKeywords.map(k => (
-                      <Badge key={k} variant="secondary"
-                        className="text-xs bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800"
-                        data-testid={`badge-missing-${k}`}>
-                        {k}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-3 pt-5 px-5">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                  Skills to Highlight
-                  <Badge variant="secondary" className="ml-auto text-xs">{optimizeResult.skillsToHighlight.length}</Badge>
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">You already have these — make them prominent.</p>
-              </CardHeader>
-              <CardContent className="px-5 pb-5">
-                {optimizeResult.skillsToHighlight.length === 0 ? (
-                  <p className="text-sm text-muted-foreground italic">No overlapping skills detected.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {optimizeResult.skillsToHighlight.map(s => (
-                      <Badge key={s} variant="secondary"
-                        className="text-xs bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800"
-                        data-testid={`badge-highlight-${s}`}>
-                        {s}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
+        <div className="space-y-4">
           {optimizeResult.tailoredResume ? (
-            <Card>
-              <CardHeader className="pb-3 pt-5 px-5">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div>
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-violet-500" />
-                      AI-Tailored Resume
+            <>
+              {/* Legend */}
+              <div className="flex items-center gap-4 text-xs text-muted-foreground px-1 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 rounded-sm bg-green-200 dark:bg-green-900/70" />
+                  Matched / Added keywords
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 rounded-sm bg-red-200 dark:bg-red-900/70" />
+                  Missing keywords
+                </div>
+              </div>
+
+              {/* 2-column workspace */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                {/* Left: Job Description */}
+                <Card>
+                  <CardHeader className="pb-2 pt-4 px-5">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                      Job Description
                     </CardTitle>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Rewritten for this specific job — suggestions only. Your original is unchanged.
+                    <p className="text-xs text-muted-foreground">
+                      <span className="text-green-700 dark:text-green-400 font-medium">Green</span> = in tailored resume ·{" "}
+                      <span className="text-red-600 dark:text-red-400 font-medium">Red</span> = still missing
                     </p>
-                  </div>
-                  <Button
-                    onClick={copyTailoredResume}
-                    className="gap-2"
-                    data-testid="button-copy-tailored"
-                  >
-                    {copied ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </CardHeader>
+                  <CardContent className="px-5 pb-5">
+                    <div
+                      className="text-sm leading-relaxed whitespace-pre-wrap max-h-[580px] overflow-y-auto pr-1"
+                      data-testid="panel-job-description"
+                    >
+                      {renderHighlightedMultiline(plainJobDesc, jdGreenKws, jdRedKws)}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Right: AI-Tailored Resume */}
+                <Card>
+                  <CardHeader className="pb-2 pt-4 px-5">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Sparkles className="h-4 w-4 text-violet-500" />
+                          AI-Tailored Resume
+                        </CardTitle>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          <span className="text-green-700 dark:text-green-400 font-medium">Green</span> = keywords inserted or highlighted
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={copyTailoredResume}
+                        className="gap-1.5 text-xs h-7"
+                        data-testid="button-copy-tailored"
+                      >
+                        {copied ? <CheckCircle className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copied ? "Copied!" : "Copy"}
+                      </Button>
+                    </div>
+
+                    {/* Still Missing */}
+                    {optimizeResult.stillMissingKeywords.length > 0 && (
+                      <div className="mt-2 p-2.5 rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                        <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1.5 flex items-center gap-1">
+                          <XCircle className="h-3.5 w-3.5" />
+                          Still Missing ({optimizeResult.stillMissingKeywords.length})
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {optimizeResult.stillMissingKeywords.map(k => (
+                            <Badge
+                              key={k}
+                              className="text-xs bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800"
+                              data-testid={`badge-still-missing-${k}`}
+                            >
+                              {k}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Added keywords */}
+                    {optimizeResult.addedKeywords.length > 0 && (
+                      <div className="mt-2 p-2.5 rounded-md bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800">
+                        <p className="text-xs font-medium text-green-700 dark:text-green-400 mb-1.5 flex items-center gap-1">
+                          <CheckCircle className="h-3.5 w-3.5" />
+                          Added ({optimizeResult.addedKeywords.length})
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {optimizeResult.addedKeywords.map(k => (
+                            <Badge
+                              key={k}
+                              className="text-xs bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800"
+                              data-testid={`badge-added-${k}`}
+                            >
+                              {k}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </CardHeader>
+                  <CardContent className="px-5 pb-5">
+                    <div
+                      className="bg-muted/30 border rounded-lg p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap max-h-[580px] overflow-y-auto"
+                      data-testid="text-tailored-resume"
+                    >
+                      {renderHighlightedMultiline(optimizeResult.tailoredResume, resumeGreenKws, [])}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Action bar */}
+              <div className="flex items-center justify-between flex-wrap gap-3 pt-1 pb-3">
+                <Button variant="outline" onClick={() => navigate(`/jobs/${jobId}`)} className="gap-1.5" data-testid="button-bottom-back">
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to Job Detail
+                </Button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={copyTailoredResume} data-testid="button-copy-tailored-bottom">
+                    <Copy className="h-4 w-4" />
                     {copied ? "Copied!" : "Copy Resume"}
                   </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1.5" data-testid="button-export-tailored">
+                        <Download className="h-4 w-4" />
+                        Export
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() => { exportTxt(optimizeResult.tailoredResume!, `${job.title}_${job.company}`); toast({ title: "Resume exported successfully." }); }}
+                        data-testid="menu-export-tailored-txt"
+                      >
+                        Export TXT
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => { exportDoc(optimizeResult.tailoredResume!, `${job.title}_${job.company}`); toast({ title: "Resume exported successfully." }); }}
+                        data-testid="menu-export-tailored-doc"
+                      >
+                        Export DOC
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => { exportPdf(optimizeResult.tailoredResume!, `${job.title}_${job.company}`); toast({ title: "Resume exported successfully." }); }}
+                        data-testid="menu-export-tailored-pdf"
+                      >
+                        Export PDF
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Button
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => saveResumeMutation.mutate()}
+                    disabled={saveResumeMutation.isPending || saved}
+                    data-testid="button-save-tailored-resume"
+                  >
+                    {saved ? (
+                      <><CheckCircle className="h-4 w-4" />Saved to Vault</>
+                    ) : saveResumeMutation.isPending ? (
+                      <><Save className="h-4 w-4 animate-spin" />Saving…</>
+                    ) : (
+                      <><Save className="h-4 w-4" />Save as New Resume</>
+                    )}
+                  </Button>
                 </div>
-              </CardHeader>
-              <CardContent className="px-5 pb-5">
-                <div
-                  className="bg-muted/40 border rounded-lg p-5 font-mono text-sm leading-relaxed whitespace-pre-wrap max-h-[600px] overflow-y-auto"
-                  data-testid="text-tailored-resume"
-                >
-                  {optimizeResult.tailoredResume}
-                </div>
-                <div className="mt-4 flex items-center justify-between flex-wrap gap-2">
-                  <p className="text-xs text-muted-foreground italic">
-                    Review carefully before use. AI may make small errors — verify all details are accurate.
-                  </p>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={copyTailoredResume} data-testid="button-copy-tailored-bottom">
-                      <Copy className="h-3.5 w-3.5" />
-                      Copy to Clipboard
-                    </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="gap-1.5 text-xs" data-testid="button-export-tailored">
-                          <Download className="h-3.5 w-3.5" />
-                          Export
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => { exportTxt(optimizeResult.tailoredResume!, `${job!.title}_${job!.company}`); toast({ title: "Resume exported successfully." }); }}
-                          data-testid="menu-export-tailored-txt"
-                        >
-                          Export TXT
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => { exportDoc(optimizeResult.tailoredResume!, `${job!.title}_${job!.company}`); toast({ title: "Resume exported successfully." }); }}
-                          data-testid="menu-export-tailored-doc"
-                        >
-                          Export DOC
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => { exportPdf(optimizeResult.tailoredResume!, `${job!.title}_${job!.company}`); toast({ title: "Resume exported successfully." }); }}
-                          data-testid="menu-export-tailored-pdf"
-                        >
-                          Export PDF
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    <Button
-                      size="sm"
-                      className="gap-1.5 text-xs"
-                      onClick={() => saveResumeMutation.mutate()}
-                      disabled={saveResumeMutation.isPending || saved}
-                      data-testid="button-save-tailored-resume"
-                    >
-                      {saved ? (
-                        <><CheckCircle className="h-3.5 w-3.5" />Saved to Vault</>
-                      ) : saveResumeMutation.isPending ? (
-                        <><Save className="h-3.5 w-3.5 animate-spin" />Saving…</>
-                      ) : (
-                        <><Save className="h-3.5 w-3.5" />Save as New Resume</>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ) : optimizeResult.improvedSummary ? (
-            <div className="space-y-4">
-              <Card>
-                <CardHeader className="pb-3 pt-5 px-5">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-violet-500" />
-                    Improved Summary
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-5 pb-5">
-                  <div className="bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 rounded-lg p-4 text-sm leading-relaxed">
-                    {optimizeResult.improvedSummary}
-                  </div>
-                </CardContent>
-              </Card>
+              </div>
+            </>
+          ) : (
+            /* Fallback non-AI view (improved bullets/summary) */
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader className="pb-3 pt-5 px-5">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <XCircle className="h-4 w-4 text-red-500" />
+                      Missing Keywords
+                      <Badge variant="secondary" className="ml-auto text-xs">{optimizeResult.missingKeywords.length}</Badge>
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground">In the job description but not in your resume.</p>
+                  </CardHeader>
+                  <CardContent className="px-5 pb-5">
+                    {optimizeResult.missingKeywords.length === 0 ? (
+                      <p className="text-sm text-muted-foreground italic">No missing keywords — great coverage!</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {optimizeResult.missingKeywords.map(k => (
+                          <Badge key={k} variant="secondary"
+                            className="text-xs bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800"
+                            data-testid={`badge-missing-${k}`}>
+                            {k}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-3 pt-5 px-5">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                      Skills to Highlight
+                      <Badge variant="secondary" className="ml-auto text-xs">{optimizeResult.skillsToHighlight.length}</Badge>
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground">You already have these — make them prominent.</p>
+                  </CardHeader>
+                  <CardContent className="px-5 pb-5">
+                    {optimizeResult.skillsToHighlight.length === 0 ? (
+                      <p className="text-sm text-muted-foreground italic">No overlapping skills detected.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {optimizeResult.skillsToHighlight.map(s => (
+                          <Badge key={s} variant="secondary"
+                            className="text-xs bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800"
+                            data-testid={`badge-highlight-${s}`}>
+                            {s}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {optimizeResult.improvedSummary && (
+                <Card>
+                  <CardHeader className="pb-3 pt-5 px-5">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-violet-500" />
+                      Improved Summary
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-5 pb-5">
+                    <div className="bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 rounded-lg p-4 text-sm leading-relaxed">
+                      {optimizeResult.improvedSummary}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {optimizeResult.improvedBullets && optimizeResult.improvedBullets.length > 0 && (
                 <Card>
@@ -506,21 +728,15 @@ export default function JobOptimize() {
                   </CardContent>
                 </Card>
               )}
-            </div>
-          ) : null}
 
-          <div className="flex items-center justify-between pt-2 pb-4">
-            <Button variant="outline" onClick={() => navigate(`/jobs/${jobId}`)} className="gap-1.5" data-testid="button-bottom-back">
-              <ArrowLeft className="h-4 w-4" />
-              Back to Job Detail
-            </Button>
-            {optimizeResult.tailoredResume && (
-              <Button onClick={copyTailoredResume} className="gap-1.5" data-testid="button-bottom-copy">
-                <Copy className="h-4 w-4" />
-                {copied ? "Copied!" : "Copy Tailored Resume"}
-              </Button>
-            )}
-          </div>
+              <div className="flex items-center justify-between pt-2 pb-4">
+                <Button variant="outline" onClick={() => navigate(`/jobs/${jobId}`)} className="gap-1.5" data-testid="button-bottom-back">
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to Job Detail
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       ) : null}
     </div>

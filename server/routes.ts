@@ -10,7 +10,7 @@ import { runDiscovery, stopDiscovery, isDiscoveryRunning } from "./discovery";
 import { analyzeAndTailor, optimizeResume } from "./tailoring";
 import { aiOptimizeResume } from "./ai-optimize";
 import { searchLinkedInJobs } from "./linkedin-search";
-import { calculateATSBreakdown } from "./ats";
+import { calculateATSBreakdown, calculateATSScore } from "./ats";
 
 const uploadsDir = path.join(process.cwd(), "uploads", "resumes");
 if (!fs.existsSync(uploadsDir)) {
@@ -882,7 +882,15 @@ export async function registerRoutes(
         }
       } else {
         const result = optimizeResume(resumeText, jobDescription);
-        res.json(result);
+        const beforeScore = calculateATSScore(resumeText, jobDescription);
+        res.json({
+          ...result,
+          tailoredResume: undefined,
+          addedKeywords: [],
+          stillMissingKeywords: result.missingKeywords,
+          beforeScore,
+          afterScore: beforeScore,
+        });
       }
     } catch (e: any) {
       res.status(500).json({ message: e.message });

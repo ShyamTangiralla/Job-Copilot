@@ -1,0 +1,52 @@
+Improve the Resume Optimization page so it becomes a true side-by-side optimization workspace and increases ATS score more meaningfully.
+
+Goals:
+1. Show the job description and AI-tailored resume side by side.
+2. Highlight matched and missing keywords directly inside both panels.
+3. Make the AI rewrite stronger while still staying truthful.
+4. Recalculate ATS score from the final AI-tailored resume text, not just from partial suggestions.
+
+UI changes:
+1. On /jobs/:id/optimize, create a 2-column layout:
+   - Left column: Job Description
+   - Right column: AI-Tailored Resume
+2. In the Job Description panel:
+   - Highlight keywords that are already present in the tailored resume in green
+   - Highlight keywords still missing from the tailored resume in red
+3. In the AI-Tailored Resume panel:
+   - Highlight matched inserted keywords in green
+   - Optionally mark still-missing target keywords in a small “Still Missing” section above the resume
+4. Keep the ATS score summary at the top, but show:
+   - Before score
+   - After score
+   - Keywords added count
+   - Keywords still missing count
+
+Optimization logic changes:
+1. Strengthen resume optimization across all allowed sections:
+   - skills section
+   - experience bullet points
+   - project bullet points
+   - optional summary if needed
+2. The optimizer must try harder to naturally integrate missing keywords that truthfully fit the existing resume.
+3. Do not invent fake experience or tools.
+4. If a keyword fits naturally with existing experience, include it in the strongest relevant section.
+5. Skills section must include only highly relevant skills for the job and only if supported by experience/projects.
+6. Recalculate the ATS score using the final tailored resume text after AI generation.
+7. Return a breakdown:
+   - addedKeywords
+   - stillMissingKeywords
+   - beforeScore
+   - afterScore
+
+Behavior:
+1. If the score improvement is less than 15 points, show a note:
+   "Optimization was limited by truthfulness and available experience."
+2. If important keywords were skipped, show which ones and why they were not inserted.
+
+Do not remove existing export/copy/save functionality.
+After implementation, summarize:
+- files changed
+- where score recalculation happens
+- where keyword highlighting is rendered
+- where final after-score is computed from the tailored resume text
