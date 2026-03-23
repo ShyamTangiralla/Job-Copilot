@@ -9,8 +9,9 @@ import {
   type DiscoveryRun, type InsertDiscoveryRun,
   type DiscoveryResult, type InsertDiscoveryResult,
   type TailoredResume, type InsertTailoredResume,
+  type CoverLetter, type InsertCoverLetter,
   candidateProfile, resumes, jobs, applicationAnswers, activityLog, settings, importLog,
-  discoveryRuns, discoveryResults, tailoredResumes,
+  discoveryRuns, discoveryResults, tailoredResumes, coverLetters,
   ROLE_TYPES,
 } from "@shared/schema";
 import { db } from "./db";
@@ -107,6 +108,10 @@ export interface IStorage {
   getTailoredResumes(jobId: number): Promise<TailoredResume[]>;
   getTailoredResume(id: number): Promise<TailoredResume | undefined>;
   deleteTailoredResume(id: number): Promise<void>;
+
+  getCoverLetter(jobId: number): Promise<CoverLetter | undefined>;
+  upsertCoverLetter(data: InsertCoverLetter): Promise<CoverLetter>;
+  deleteCoverLetter(jobId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -623,6 +628,29 @@ export class DatabaseStorage implements IStorage {
       applyPriorityLabel: label,
       applyPriorityExplanation: explanations.join(", "),
     };
+  }
+
+  async getCoverLetter(jobId: number): Promise<CoverLetter | undefined> {
+    const rows = await db.select().from(coverLetters).where(eq(coverLetters.jobId, jobId)).limit(1);
+    return rows[0];
+  }
+
+  async upsertCoverLetter(data: InsertCoverLetter): Promise<CoverLetter> {
+    const existing = await this.getCoverLetter(data.jobId);
+    if (existing) {
+      const [updated] = await db
+        .update(coverLetters)
+        .set({ content: data.content, resumeId: data.resumeId, updatedAt: new Date() })
+        .where(eq(coverLetters.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(coverLetters).values(data).returning();
+    return created;
+  }
+
+  async deleteCoverLetter(jobId: number): Promise<void> {
+    await db.delete(coverLetters).where(eq(coverLetters.jobId, jobId));
   }
 }
 

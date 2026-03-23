@@ -179,3 +179,55 @@ export async function aiOptimizeResume(
     usedEnrichmentPass: false,
   };
 }
+
+// ─── Cover Letter Generator ───────────────────────────────────────
+const COVER_LETTER_SYSTEM_PROMPT = `You are an expert career coach and professional cover letter writer.
+
+Given a candidate's resume, job description, company name, and job title, write a concise, compelling cover letter.
+
+Rules:
+1. Only reference skills and experience that actually appear in the resume — never fabricate anything
+2. Focus on the most relevant skills and accomplishments for this specific role
+3. Keep it to 3-4 short paragraphs (250-350 words)
+4. Open with a strong hook about the specific role and company
+5. Highlight 2-3 concrete achievements with metrics from the resume
+6. Close with enthusiasm and a clear call to action
+7. Use a professional but personable tone
+8. Do NOT include "Dear Hiring Manager," or any salutation or signature line — just the body paragraphs
+9. Do not start with "I" — vary your sentence structure
+10. Output plain text only, no markdown`;
+
+export async function generateCoverLetter(
+  resumeText: string,
+  jobDescription: string,
+  company: string,
+  jobTitle: string
+): Promise<string> {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("No OpenAI API key configured");
+  }
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: COVER_LETTER_SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: `COMPANY: ${company}
+JOB TITLE: ${jobTitle}
+
+JOB DESCRIPTION:
+${jobDescription.slice(0, 6000)}
+
+RESUME:
+${resumeText.slice(0, 6000)}
+
+Write the cover letter body paragraphs now.`,
+      },
+    ],
+    temperature: 0.7,
+    max_tokens: 800,
+  });
+
+  return response.choices[0]?.message?.content?.trim() ?? "";
+}

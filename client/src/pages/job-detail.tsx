@@ -42,7 +42,11 @@ import {
   CheckCircle2,
   XCircle,
   Minus,
+  FileDown,
+  Mail,
+  RefreshCw,
 } from "lucide-react";
+import { exportPdf } from "@/lib/export-resume";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Job, CandidateProfile, Resume, ApplicationAnswer } from "@shared/schema";
@@ -324,6 +328,207 @@ function JobMatchAnalysis({ jobId, onOptimize }: { jobId: number; onOptimize: ()
               ))}
             </div>
           </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Cover Letter Generator ───────────────────────────────────────────────────
+
+interface SavedCoverLetter {
+  id: number;
+  jobId: number;
+  resumeId: number;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function CoverLetterGenerator({ job, resumes }: { job: Job; resumes: Resume[] }) {
+  const { toast } = useToast();
+  const activeResumes = resumes.filter(r => r.active && r.plainText && r.plainText.trim().length > 0);
+  const [selectedResumeId, setSelectedResumeId] = useState<string>(
+    activeResumes[0]?.id ? String(activeResumes[0].id) : ""
+  );
+  const [content, setContent] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const { data: saved } = useQuery<SavedCoverLetter | null>({
+    queryKey: ["/api/jobs", String(job.id), "cover-letter"],
+    queryFn: async () => {
+      const res = await fetch(`/api/jobs/${job.id}/cover-letter`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (saved?.content && !content) {
+      setContent(saved.content);
+      if (saved.resumeId) setSelectedResumeId(String(saved.resumeId));
+    }
+  }, [saved]);
+
+  const generateMutation = useMutation({
+    mutationFn: async () => {
+      const resume = activeResumes.find(r => String(r.id) === selectedResumeId);
+      if (!resume) throw new Error("Please select a resume first");
+      const data = await apiRequest("POST", `/api/jobs/${job.id}/cover-letter/generate`, {
+        resumeText: resume.plainText,
+        resumeId: resume.id,
+      });
+      return data as { content: string };
+    },
+    onSuccess: async (data) => {
+      setContent(data.content);
+      await saveMutation.mutateAsync(data.content);
+      toast({ title: "Cover letter generated" });
+    },
+    onError: (e: any) => {
+      toast({ title: "Generation failed", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (text: string) => {
+      const resumeId = parseInt(selectedResumeId) || 0;
+      await apiRequest("POST", `/api/jobs/${job.id}/cover-letter`, { content: text, resumeId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", String(job.id), "cover-letter"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/jobs/${job.id}/cover-letter`);
+    },
+    onSuccess: () => {
+      setContent("");
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", String(job.id), "cover-letter"] });
+      toast({ title: "Cover letter cleared" });
+    },
+  });
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(content);
+    setCopied(true);
+    toast({ title: "Copied to clipboard" });
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleExportPdf = () => {
+    exportPdf(content, `CoverLetter_${job.company}_${job.title}`);
+  };
+
+  const handleBlur = () => {
+    if (content.trim() && content !== saved?.content) {
+      saveMutation.mutate(content);
+    }
+  };
+
+  if (activeResumes.length === 0) return null;
+
+  return (
+    <Card data-testid="card-cover-letter">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base font-medium flex items-center gap-1.5">
+          <Mail className="h-4 w-4" />
+          Cover Letter
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* Resume selector */}
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Resume</Label>
+          <Select
+            value={selectedResumeId}
+            onValueChange={setSelectedResumeId}
+            data-testid="select-cover-letter-resume"
+          >
+            <SelectTrigger className="h-8 text-xs" data-testid="trigger-cover-letter-resume">
+              <SelectValue placeholder="Select resume..." />
+            </SelectTrigger>
+            <SelectContent>
+              {activeResumes.map(r => (
+                <SelectItem key={r.id} value={String(r.id)}>
+                  {r.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Generate button */}
+        <Button
+          className="w-full gap-1.5 text-xs h-8"
+          size="sm"
+          onClick={() => generateMutation.mutate()}
+          disabled={generateMutation.isPending || !selectedResumeId}
+          data-testid="button-generate-cover-letter"
+        >
+          {generateMutation.isPending ? (
+            <>
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              Generating...
+            </>
+          ) : (
+            <>
+              <Sparkles className="h-3.5 w-3.5" />
+              {content ? "Regenerate Cover Letter" : "Generate Cover Letter"}
+            </>
+          )}
+        </Button>
+
+        {/* Generated content */}
+        {content && (
+          <>
+            <Separator />
+            <Textarea
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              onBlur={handleBlur}
+              className="text-xs leading-relaxed resize-none"
+              rows={14}
+              data-testid="textarea-cover-letter"
+            />
+            {saveMutation.isPending && (
+              <p className="text-xs text-muted-foreground">Saving...</p>
+            )}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 gap-1.5 text-xs h-7"
+                onClick={handleCopy}
+                data-testid="button-copy-cover-letter"
+              >
+                <Copy className="h-3 w-3" />
+                {copied ? "Copied!" : "Copy"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 gap-1.5 text-xs h-7"
+                onClick={handleExportPdf}
+                data-testid="button-export-cover-letter-pdf"
+              >
+                <FileDown className="h-3 w-3" />
+                Export PDF
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
+                onClick={() => deleteMutation.mutate()}
+                title="Clear cover letter"
+                data-testid="button-delete-cover-letter"
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
@@ -698,6 +903,10 @@ export default function JobDetail() {
             jobId={job.id}
             onOptimize={() => navigate(`/jobs/${job.id}/optimize`)}
           />
+
+          {resumes && resumes.length > 0 && (
+            <CoverLetterGenerator job={job} resumes={resumes} />
+          )}
 
           {resumes && (
             <ResumeTailoringAssistant job={job} resumes={resumes} />

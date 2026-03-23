@@ -190,6 +190,19 @@ export const insertTailoredResumeSchema = createInsertSchema(tailoredResumes).om
 export type InsertTailoredResume = z.infer<typeof insertTailoredResumeSchema>;
 export type TailoredResume = typeof tailoredResumes.$inferSelect;
 
+export const coverLetters = pgTable("cover_letters", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  jobId: integer("job_id").notNull(),
+  resumeId: integer("resume_id").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCoverLetterSchema = createInsertSchema(coverLetters).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCoverLetter = z.infer<typeof insertCoverLetterSchema>;
+export type CoverLetter = typeof coverLetters.$inferSelect;
+
 export const JOB_STATUSES = ["New", "Reviewed", "Ready to Apply", "Applied", "Skipped", "Interview", "Rejected"] as const;
 export const ROLE_TYPES = ["Data Analyst", "Healthcare Data Analyst", "Healthcare Analyst", "Business Analyst", "Unknown"] as const;
 export const FIT_LABELS = ["Strong Match", "Possible Match", "Weak Match"] as const;

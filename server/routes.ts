@@ -8,7 +8,7 @@ import { insertJobSchema, insertResumeSchema, insertApplicationAnswerSchema, ins
 import { scrapeJobFromUrl, parseEmailContent, parseBulkInput } from "./scraper";
 import { runDiscovery, stopDiscovery, isDiscoveryRunning } from "./discovery";
 import { analyzeAndTailor, optimizeResume } from "./tailoring";
-import { aiOptimizeResume, generateSuggestions, extractKeywords } from "./ai-optimize";
+import { aiOptimizeResume, generateSuggestions, extractKeywords, generateCoverLetter } from "./ai-optimize";
 import { searchLinkedInJobs } from "./linkedin-search";
 import { calculateATSBreakdown, calculateATSScore } from "./ats";
 
@@ -1152,6 +1152,72 @@ export async function registerRoutes(
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
       await storage.deleteTailoredResume(id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cover Letter
+  // ---------------------------------------------------------------------------
+  app.get("/api/jobs/:id/cover-letter", async (req, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      if (isNaN(jobId)) return res.status(400).json({ message: "Invalid job ID" });
+      const letter = await storage.getCoverLetter(jobId);
+      res.json(letter ?? null);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/jobs/:id/cover-letter/generate", async (req, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      if (isNaN(jobId)) return res.status(400).json({ message: "Invalid job ID" });
+
+      const { resumeText, resumeId } = req.body;
+      if (!resumeText || typeof resumeText !== "string" || !resumeText.trim()) {
+        return res.status(400).json({ message: "resumeText is required" });
+      }
+
+      const job = await storage.getJob(jobId);
+      if (!job) return res.status(404).json({ message: "Job not found" });
+
+      const cleanDesc = serverStripHtml(job.description);
+      const content = await generateCoverLetter(resumeText, cleanDesc, job.company, job.title);
+      res.json({ content });
+    } catch (e: any) {
+      if (e.status === 402 || e.code === "insufficient_quota") {
+        return res.status(402).json({ message: "OpenAI quota exceeded" });
+      }
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/jobs/:id/cover-letter", async (req, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      if (isNaN(jobId)) return res.status(400).json({ message: "Invalid job ID" });
+
+      const { content, resumeId } = req.body;
+      if (!content || typeof content !== "string" || !content.trim()) {
+        return res.status(400).json({ message: "content is required" });
+      }
+
+      const letter = await storage.upsertCoverLetter({ jobId, resumeId: resumeId ?? 0, content });
+      res.json(letter);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/jobs/:id/cover-letter", async (req, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      if (isNaN(jobId)) return res.status(400).json({ message: "Invalid job ID" });
+      await storage.deleteCoverLetter(jobId);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
