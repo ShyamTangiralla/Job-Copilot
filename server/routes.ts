@@ -1334,11 +1334,10 @@ export async function registerRoutes(
       console.log(`[LinkedIn Search] ── Starting search ──`);
       console.log(`[LinkedIn Search] Roles: ${roleList.join(", ")}`);
       console.log(`[LinkedIn Search] Location: ${location || "United States"}`);
-      console.log(`[LinkedIn Search] Global Discovery filters applied: NONE`);
 
-      const { jobs, debugPerRole, totalRawItems } = await searchLinkedInJobs(roleList, location || "", apifyToken.trim());
+      const { jobs, debug } = await searchLinkedInJobs(roleList, location || "", apifyToken.trim());
 
-      console.log(`[LinkedIn Search] ── Done: ${jobs.length} jobs returned, ${totalRawItems} Apify dataset items ──`);
+      console.log(`[LinkedIn Search] ── Done: ${jobs.length} unique jobs, ${debug.rawItemCount} Apify dataset items ──`);
 
       res.json({
         results: jobs,
@@ -1346,20 +1345,15 @@ export async function registerRoutes(
         rolesSearched: roleList,
         location: location || "United States",
         debug: {
-          actorId: debugPerRole[0]?.actorId ?? "bebity~linkedin-jobs-scraper",
-          rolesSent: roleList,
-          locationSent: location || "United States",
-          totalApifyDatasetItems: totalRawItems,
-          perRole: debugPerRole.map(d => ({
-            role: d.role,
-            searchUrl: d.searchUrl,
-            runId: d.runId,
-            datasetId: d.datasetId,
-            rawItemCount: d.rawItemCount,
-            status: d.status,
-            payloadSent: d.payload,
-            error: d.error,
-          })),
+          actorId: debug.actorId,
+          rolesSent: debug.rolesSent,
+          locationSent: debug.locationSent,
+          runId: debug.runId,
+          datasetId: debug.datasetId,
+          rawItemCount: debug.rawItemCount,
+          status: debug.status,
+          payloadSent: debug.payload,
+          error: debug.error,
         },
       });
     } catch (e: any) {
