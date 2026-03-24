@@ -1332,19 +1332,34 @@ export async function registerRoutes(
       }
 
       console.log(`[LinkedIn Search] ── Starting search ──`);
-      console.log(`[LinkedIn Search] Job roles sent: ${roleList.join(", ")}`);
-      console.log(`[LinkedIn Search] Location sent: ${location || "United States"}`);
-      console.log(`[LinkedIn Search] Global Discovery filters applied: NONE — LinkedIn Search is independent`);
+      console.log(`[LinkedIn Search] Roles: ${roleList.join(", ")}`);
+      console.log(`[LinkedIn Search] Location: ${location || "United States"}`);
+      console.log(`[LinkedIn Search] Global Discovery filters applied: NONE`);
 
-      const results = await searchLinkedInJobs(roleList, location || "", apifyToken.trim());
+      const { jobs, debugPerRole, totalRawItems } = await searchLinkedInJobs(roleList, location || "", apifyToken.trim());
 
-      console.log(`[LinkedIn Search] ── Search complete: ${results.length} jobs returned to frontend ──`);
+      console.log(`[LinkedIn Search] ── Done: ${jobs.length} jobs returned, ${totalRawItems} Apify dataset items ──`);
 
       res.json({
-        results,
-        count: results.length,
+        results: jobs,
+        count: jobs.length,
         rolesSearched: roleList,
         location: location || "United States",
+        debug: {
+          actorId: debugPerRole[0]?.actorId ?? "bebity~linkedin-jobs-scraper",
+          rolesSent: roleList,
+          locationSent: location || "United States",
+          totalApifyDatasetItems: totalRawItems,
+          perRole: debugPerRole.map(d => ({
+            role: d.role,
+            runId: d.runId,
+            datasetId: d.datasetId,
+            rawItemCount: d.rawItemCount,
+            status: d.status,
+            payloadSent: d.payload,
+            error: d.error,
+          })),
+        },
       });
     } catch (e: any) {
       console.error(`[LinkedIn Search] Search failed: ${e.message}`);

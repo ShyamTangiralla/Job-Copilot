@@ -119,6 +119,13 @@ export default function JobDiscovery() {
   const [selectedJobIndices, setSelectedJobIndices] = useState<Set<number>>(new Set());
   const [liImportSummary, setLiImportSummary] = useState<{ imported: number; duplicates: number; failed: number; rawCount: number } | null>(null);
   const [liSearchCount, setLiSearchCount] = useState<number>(0);
+  const [liDebug, setLiDebug] = useState<{
+    actorId: string;
+    rolesSent: string[];
+    locationSent: string;
+    totalApifyDatasetItems: number;
+    perRole: { role: string; runId: string; datasetId: string; rawItemCount: number; status: string; payloadSent: object; error?: string }[];
+  } | null>(null);
 
   const liSearchMutation = useMutation({
     mutationFn: () =>
@@ -127,15 +134,16 @@ export default function JobDiscovery() {
         location: liLocation,
         apifyToken,
       }).then((r) => r.json()),
-    onSuccess: (data: { results: LinkedInJobResult[]; count: number }) => {
+    onSuccess: (data: { results: LinkedInJobResult[]; count: number; debug?: typeof liDebug }) => {
       const results = data.results ?? [];
       setLiResults(results);
       setLiSearchCount(results.length);
+      setLiDebug(data.debug ?? null);
       setLiError(null);
       setSelectedJobIndices(new Set());
       setLiImportSummary(null);
       if (results.length === 0) {
-        toast({ title: "No results", description: "Apify returned 0 jobs. Try different roles or a broader location. Check server logs for actorId/runId/datasetId details." });
+        toast({ title: "No results", description: "Apify returned 0 jobs. See the debug panel below for actorId, runId, and dataset item count." });
       } else {
         toast({ title: `${data.count} jobs found`, description: "Results shown below. Select jobs to import into your inbox." });
       }
@@ -801,6 +809,36 @@ export default function JobDiscovery() {
           {liError && !liSearchMutation.isPending && (
             <div className="rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" data-testid="li-error-message">
               {liError}
+            </div>
+          )}
+
+          {liDebug && (
+            <div className="rounded border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-xs space-y-1" data-testid="li-debug-panel">
+              <p className="font-semibold text-blue-800 dark:text-blue-300 text-sm">Debug Info</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-blue-900 dark:text-blue-200">
+                <span className="font-medium">Actor ID:</span>
+                <span className="font-mono">{liDebug.actorId}</span>
+                <span className="font-medium">Roles sent:</span>
+                <span>{liDebug.rolesSent.join(", ")}</span>
+                <span className="font-medium">Location sent:</span>
+                <span>{liDebug.locationSent}</span>
+                <span className="font-medium">Apify dataset items:</span>
+                <span className={liDebug.totalApifyDatasetItems === 0 ? "text-red-600 font-semibold" : "text-green-700 font-semibold"}>
+                  {liDebug.totalApifyDatasetItems}
+                </span>
+              </div>
+              {liDebug.perRole.map((r, i) => (
+                <div key={i} className="mt-1 pt-1 border-t border-blue-200 dark:border-blue-700 grid grid-cols-2 gap-x-4 gap-y-0.5">
+                  <span className="font-medium">Role:</span><span>{r.role}</span>
+                  <span className="font-medium">Run ID:</span><span className="font-mono break-all">{r.runId || "—"}</span>
+                  <span className="font-medium">Dataset ID:</span><span className="font-mono break-all">{r.datasetId || "—"}</span>
+                  <span className="font-medium">Items in dataset:</span><span className={r.rawItemCount === 0 ? "text-red-600 font-semibold" : "text-green-700 font-semibold"}>{r.rawItemCount}</span>
+                  <span className="font-medium">Status:</span><span>{r.status}</span>
+                  <span className="font-medium col-span-2">Payload sent:</span>
+                  <pre className="col-span-2 bg-blue-100 dark:bg-blue-900/40 rounded p-1 text-xs overflow-x-auto">{JSON.stringify(r.payloadSent, null, 2)}</pre>
+                  {r.error && <><span className="font-medium text-red-600">Error:</span><span className="text-red-600">{r.error}</span></>}
+                </div>
+              ))}
             </div>
           )}
 
