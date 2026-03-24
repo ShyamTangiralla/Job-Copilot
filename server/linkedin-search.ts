@@ -1,14 +1,15 @@
 /**
  * LinkedIn Jobs search via Apify.
  *
- * Default actor: bebity~linkedin-jobs-scraper
+ * Flow: start actor run → poll until SUCCEEDED → fetch dataset items
+ * Actor: bebity~linkedin-jobs-scraper
  *   https://apify.com/bebity/linkedin-jobs-scraper
- *
- * If you prefer a different actor, update APIFY_ACTOR_ID and adjust
- * buildActorInput() and parseRawJob() to match that actor's schema.
  */
 
 const APIFY_ACTOR_ID = "bebity~linkedin-jobs-scraper";
+const APIFY_BASE = "https://api.apify.com/v2";
+const POLL_INTERVAL_MS = 4000;
+const MAX_WAIT_MS = 150_000;
 
 export interface LinkedInJobResult {
   title: string;
@@ -60,16 +61,19 @@ function buildActorInput(role: string, location: string) {
 
 // ---------------------------------------------------------------------------
 // Raw result parser — handles field name variations across actor versions
+// Supports both old field names and new Apify actor fields
 // ---------------------------------------------------------------------------
 
 function parseRawJob(raw: Record<string, any>, role: string): LinkedInJobResult {
+  // title: jobTitle (new) → title (old) → position → fallback role
   const title =
-    raw.title ||
     raw.jobTitle ||
+    raw.title ||
     raw.position ||
     role;
 
-  const companyRaw = raw.company ?? raw.companyName ?? raw.employer ?? {};
+  // company: companyName (new) → company (old) → employer object → "Unknown"
+  const companyRaw = raw.companyName ?? raw.company ?? raw.employer ?? {};
   const company =
     typeof companyRaw === "string"
       ? companyRaw
@@ -89,7 +93,9 @@ function parseRawJob(raw: Record<string, any>, role: string): LinkedInJobResult 
     raw.applyLink ||
     "";
 
+  // postedTime (new) → postedAt → datePosted → publishedAt
   const rawDate =
+    raw.postedTime ||
     raw.postedAt ||
     raw.postedDate ||
     raw.datePosted ||
@@ -127,7 +133,40 @@ function extractDate(raw: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Public API: search one role via Apify
+// Poll a single Apify run until it finishes or times out
+// ---------------------------------------------------------------------------
+
+async function waitForRun(
+  runId: string,
+  token: string,
+): Promise<{ status: string; defaultDatasetId: string }> {
+  const startTime = Date.now();
+
+  while (true) {
+    if (Date.now() - startTime > MAX_WAIT_MS) {
+      throw new Error(`Apify run ${runId} timed out after ${MAX_WAIT_MS / 1000}s`);
+    }
+
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+
+    const pollRes = await fetch(
+      `${APIFY_BASE}/actor-runs/${runId}?token=${token}`,
+    );
+
+    if (!pollRes.ok) continue;
+
+    const pollData = await pollRes.json();
+    const status: string = pollData?.data?.status ?? "";
+    const datasetId: string = pollData?.data?.defaultDatasetId ?? "";
+
+    if (status === "SUCCEEDED" || status === "FAILED" || status === "ABORTED" || status === "TIMED-OUT") {
+      return { status, defaultDatasetId: datasetId };
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public API: search one role via Apify (async run → poll → dataset fetch)
 // ---------------------------------------------------------------------------
 
 export async function searchLinkedInJobsByRole(
@@ -135,26 +174,64 @@ export async function searchLinkedInJobsByRole(
   location: string,
   apifyToken: string,
 ): Promise<LinkedInJobResult[]> {
-  const endpoint =
-    `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/run-sync-get-dataset-items` +
-    `?token=${encodeURIComponent(apifyToken)}&timeout=120`;
+  const token = encodeURIComponent(apifyToken);
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildActorInput(role, location)),
-    signal: AbortSignal.timeout(130_000),
-  });
+  console.log(`[Apify] Starting run — actorId: ${APIFY_ACTOR_ID}, role: "${role}"`);
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(
-      `Apify error ${response.status} for role "${role}": ${body.slice(0, 300)}`,
-    );
+  // 1. Start the actor run
+  const startRes = await fetch(
+    `${APIFY_BASE}/acts/${APIFY_ACTOR_ID}/runs?token=${token}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildActorInput(role, location)),
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+
+  if (!startRes.ok) {
+    const body = await startRes.text().catch(() => "");
+    throw new Error(`Apify start error ${startRes.status} for role "${role}": ${body.slice(0, 300)}`);
   }
 
-  const data = await response.json();
-  if (!Array.isArray(data)) return [];
+  const startData = await startRes.json();
+  const runId: string = startData?.data?.id ?? "";
+  const initialDatasetId: string = startData?.data?.defaultDatasetId ?? "";
+
+  console.log(`[Apify] Run started — runId: ${runId}`);
+
+  // 2. Poll until the run completes
+  const { status, defaultDatasetId } = await waitForRun(runId, token);
+  const datasetId = defaultDatasetId || initialDatasetId;
+
+  console.log(`[Apify] Run finished — status: ${status}, datasetId: ${datasetId}`);
+
+  if (status !== "SUCCEEDED") {
+    throw new Error(`Apify run ${runId} ended with status: ${status}`);
+  }
+
+  if (!datasetId) {
+    throw new Error(`Apify run ${runId} succeeded but no datasetId was returned`);
+  }
+
+  // 3. Fetch dataset items
+  const itemsRes = await fetch(
+    `${APIFY_BASE}/datasets/${datasetId}/items?token=${token}`,
+    { signal: AbortSignal.timeout(30_000) },
+  );
+
+  if (!itemsRes.ok) {
+    const body = await itemsRes.text().catch(() => "");
+    throw new Error(`Apify dataset fetch error ${itemsRes.status}: ${body.slice(0, 300)}`);
+  }
+
+  const data = await itemsRes.json();
+  if (!Array.isArray(data)) {
+    console.log(`[Apify] Dataset returned non-array response for role "${role}"`);
+    return [];
+  }
+
+  console.log(`[Apify] Fetched ${data.length} items from datasetId: ${datasetId}`);
 
   return data.map((item: Record<string, any>) => parseRawJob(item, role));
 }
@@ -185,6 +262,10 @@ export async function searchLinkedInJobs(
     }
   }
 
+  if (errors.length > 0) {
+    console.warn(`[Apify] Some roles failed:\n${errors.join("\n")}`);
+  }
+
   // Deduplicate within the batch using normalised URLs
   const seen = new Set<string>();
   const deduped: LinkedInJobResult[] = [];
@@ -200,6 +281,8 @@ export async function searchLinkedInJobs(
       deduped.push(job);
     }
   }
+
+  console.log(`[Apify] Total jobs imported: ${deduped.length} (after dedup from ${allJobs.length})`);
 
   return deduped;
 }

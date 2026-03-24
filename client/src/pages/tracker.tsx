@@ -28,6 +28,9 @@ import {
   Flag,
   Trophy,
   Star,
+  Bell,
+  CheckCheck,
+  Calendar,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -75,7 +78,22 @@ export default function Tracker() {
     },
   });
 
+  const markDone = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("PATCH", `/api/jobs/${id}`, { followUpDate: "" });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({ title: "Follow-up marked as done" });
+    },
+  });
+
   const today = new Date().toISOString().split("T")[0];
+
+  const reminders = (jobs ?? []).filter(
+    (j) => j.followUpDate && j.followUpDate <= today,
+  );
 
   const stats = {
     total: jobs?.length ?? 0,
@@ -192,6 +210,65 @@ export default function Tracker() {
               </Card>
             ))}
       </div>
+
+      {reminders.length > 0 && (
+        <Card className="border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm flex items-center gap-2 text-amber-700 dark:text-amber-400">
+              <Bell className="h-4 w-4" />
+              Reminders
+              <Badge variant="secondary" className="text-xs bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400">
+                {reminders.length}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            <div className="space-y-2">
+              {reminders.map((job) => {
+                const isOverdue = job.followUpDate! < today;
+                return (
+                  <div
+                    key={job.id}
+                    className="flex items-center gap-3 rounded-md border bg-background px-3 py-2.5"
+                    data-testid={`reminder-row-${job.id}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-sm font-medium truncate cursor-pointer hover:underline"
+                        onClick={() => navigate(`/jobs/${job.id}`)}
+                      >
+                        {job.title}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span className="text-xs text-muted-foreground">{job.company}</span>
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{job.status}</Badge>
+                        <span
+                          className={`flex items-center gap-1 text-xs font-medium ${isOverdue ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}
+                          data-testid={`reminder-date-${job.id}`}
+                        >
+                          <Calendar className="h-3 w-3" />
+                          {isOverdue ? `Overdue: ${job.followUpDate}` : `Due: ${job.followUpDate}`}
+                        </span>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 border-green-300 text-green-700 hover:bg-green-50 dark:border-green-700 dark:text-green-400 dark:hover:bg-green-950/30 shrink-0"
+                      onClick={() => markDone.mutate(job.id)}
+                      disabled={markDone.isPending}
+                      data-testid={`button-mark-done-${job.id}`}
+                    >
+                      <CheckCheck className="h-3.5 w-3.5" />
+                      Mark Done
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>

@@ -342,7 +342,27 @@ export async function registerRoutes(
   app.patch("/api/jobs/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const job = await storage.updateJob(id, req.body);
+      const updatePayload = { ...req.body };
+
+      // Auto-suggest follow-up date when status changes to key stages
+      if (req.body.status && !req.body.followUpDate) {
+        const existing = await storage.getJob(id);
+        if (existing && !existing.followUpDate) {
+          const followUpDays: Record<string, number> = {
+            Applied: 7,
+            Interview: 2,
+            "Final Round": 3,
+          };
+          const days = followUpDays[req.body.status];
+          if (days !== undefined) {
+            const d = new Date();
+            d.setDate(d.getDate() + days);
+            updatePayload.followUpDate = d.toISOString().split("T")[0];
+          }
+        }
+      }
+
+      const job = await storage.updateJob(id, updatePayload);
       if (!job) return res.status(404).json({ message: "Job not found" });
       if (req.body.status) {
         await storage.logActivity({ jobId: id, action: "Status changed", details: `Changed to ${req.body.status}` });
