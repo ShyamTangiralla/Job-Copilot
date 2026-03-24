@@ -43,27 +43,32 @@ function normalizeForDedup(url: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Apify actor input builder
+// LinkedIn search URL builder + Apify actor input builder
 // ---------------------------------------------------------------------------
-// Actor schema (bebity/linkedin-jobs-scraper):
-//   title        – job title / keywords (string, required)
-//   location     – location string (string, required, default: "United States")
-//   rows         – number of results (integer, max 1000, default: 50)
-//   publishedAt  – time filter: "r86400" (24h) | "r604800" (1 week) | "r2592000" (1 month)
-//   companyName  – array of company names (optional)
-//   companyId    – array of company LinkedIn IDs (optional)
-//   workType     – "1" Onsite | "2" Remote | "3" Hybrid (optional)
-//   contractType – "F" Full-time | "P" Part-time | "C" Contract | etc. (optional)
-//   proxy        – Apify proxy config (optional)
+// Using startUrls mode — the actor accepts a LinkedIn jobs search URL and
+// scrapes all matching results from that page, which is the most reliable way
+// to trigger a real LinkedIn search.
+//
+// f_TPR=r604800 → "Past week" time filter (LinkedIn's own query param)
 // ---------------------------------------------------------------------------
 
-function buildActorInput(role: string, location: string) {
-  return {
-    title: role,
+function buildLinkedInSearchUrl(role: string, location: string): string {
+  const params = new URLSearchParams({
+    keywords: role,
     location: location || "United States",
-    rows: 50,
-    publishedAt: "r604800", // past week — keeps results fresh without being too narrow
+    f_TPR: "r604800",  // past week
+  });
+  return `https://www.linkedin.com/jobs/search/?${params.toString()}`;
+}
+
+function buildActorInput(role: string, location: string): { searchUrl: string; payload: object } {
+  const searchUrl = buildLinkedInSearchUrl(role, location);
+  const payload = {
+    startUrls: [{ url: searchUrl }],
+    maxItems: 50,
+    proxy: { useApifyProxy: true },
   };
+  return { searchUrl, payload };
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +184,7 @@ async function waitForRun(
 export interface RoleSearchDebug {
   role: string;
   actorId: string;
+  searchUrl: string;
   payload: object;
   runId: string;
   datasetId: string;
@@ -193,11 +199,12 @@ export async function searchLinkedInJobsByRole(
   apifyToken: string,
 ): Promise<{ jobs: LinkedInJobResult[]; debug: RoleSearchDebug }> {
   const token = encodeURIComponent(apifyToken);
-  const payload = buildActorInput(role, location);
+  const { searchUrl, payload } = buildActorInput(role, location);
 
   const debug: RoleSearchDebug = {
     role,
     actorId: APIFY_ACTOR_ID,
+    searchUrl,
     payload,
     runId: "",
     datasetId: "",
@@ -208,6 +215,7 @@ export async function searchLinkedInJobsByRole(
   console.log(`[Apify] ── Starting run ──`);
   console.log(`[Apify] actorId: ${APIFY_ACTOR_ID}`);
   console.log(`[Apify] role: "${role}", location: "${location || "United States"}"`);
+  console.log(`[Apify] LinkedIn search URL: ${searchUrl}`);
   console.log(`[Apify] Exact JSON payload sent:\n${JSON.stringify(payload, null, 2)}`);
 
   // 1. Start the actor run

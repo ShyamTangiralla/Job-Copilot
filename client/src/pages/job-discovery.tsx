@@ -124,7 +124,7 @@ export default function JobDiscovery() {
     rolesSent: string[];
     locationSent: string;
     totalApifyDatasetItems: number;
-    perRole: { role: string; runId: string; datasetId: string; rawItemCount: number; status: string; payloadSent: object; error?: string }[];
+    perRole: { role: string; searchUrl: string; runId: string; datasetId: string; rawItemCount: number; status: string; payloadSent: object; error?: string }[];
   } | null>(null);
 
   const liSearchMutation = useMutation({
@@ -830,6 +830,8 @@ export default function JobDiscovery() {
               {liDebug.perRole.map((r, i) => (
                 <div key={i} className="mt-1 pt-1 border-t border-blue-200 dark:border-blue-700 grid grid-cols-2 gap-x-4 gap-y-0.5">
                   <span className="font-medium">Role:</span><span>{r.role}</span>
+                  <span className="font-medium col-span-2">Search URL:</span>
+                  <a href={r.searchUrl} target="_blank" rel="noopener noreferrer" className="col-span-2 font-mono break-all text-blue-700 dark:text-blue-300 underline">{r.searchUrl || "—"}</a>
                   <span className="font-medium">Run ID:</span><span className="font-mono break-all">{r.runId || "—"}</span>
                   <span className="font-medium">Dataset ID:</span><span className="font-mono break-all">{r.datasetId || "—"}</span>
                   <span className="font-medium">Items in dataset:</span><span className={r.rawItemCount === 0 ? "text-red-600 font-semibold" : "text-green-700 font-semibold"}>{r.rawItemCount}</span>

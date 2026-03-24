@@ -1352,6 +1352,7 @@ export async function registerRoutes(
           totalApifyDatasetItems: totalRawItems,
           perRole: debugPerRole.map(d => ({
             role: d.role,
+            searchUrl: d.searchUrl,
             runId: d.runId,
             datasetId: d.datasetId,
             rawItemCount: d.rawItemCount,
