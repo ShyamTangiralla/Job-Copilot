@@ -117,7 +117,8 @@ export default function JobDiscovery() {
   const [liResults, setLiResults] = useState<LinkedInJobResult[]>([]);
   const [liError, setLiError] = useState<string | null>(null);
   const [selectedJobIndices, setSelectedJobIndices] = useState<Set<number>>(new Set());
-  const [liImportSummary, setLiImportSummary] = useState<{ imported: number; duplicates: number; failed: number } | null>(null);
+  const [liImportSummary, setLiImportSummary] = useState<{ imported: number; duplicates: number; failed: number; rawCount: number } | null>(null);
+  const [liSearchCount, setLiSearchCount] = useState<number>(0);
 
   const liSearchMutation = useMutation({
     mutationFn: () =>
@@ -127,14 +128,16 @@ export default function JobDiscovery() {
         apifyToken,
       }).then((r) => r.json()),
     onSuccess: (data: { results: LinkedInJobResult[]; count: number }) => {
-      setLiResults(data.results ?? []);
+      const results = data.results ?? [];
+      setLiResults(results);
+      setLiSearchCount(results.length);
       setLiError(null);
       setSelectedJobIndices(new Set());
       setLiImportSummary(null);
-      if ((data.results ?? []).length === 0) {
-        toast({ title: "No results", description: "No LinkedIn jobs found for those criteria in the last 24 hours." });
+      if (results.length === 0) {
+        toast({ title: "No results", description: "Apify returned 0 jobs. Try different roles or a broader location. Check server logs for actorId/runId/datasetId details." });
       } else {
-        toast({ title: `${data.count} jobs found`, description: "Results shown below. Nothing has been saved yet." });
+        toast({ title: `${data.count} jobs found`, description: "Results shown below. Select jobs to import into your inbox." });
       }
     },
     onError: (err: any) => {
@@ -146,16 +149,20 @@ export default function JobDiscovery() {
   const liImportMutation = useMutation({
     mutationFn: (jobs: LinkedInJobResult[]) =>
       apiRequest("POST", "/api/import-linkedin-jobs", { jobs }).then((r) => r.json()),
-    onSuccess: (data: { imported: number; duplicates: number; failed: number }) => {
+    onSuccess: (data: { imported: number; duplicates: number; failed: number; rawCount: number }) => {
       setLiImportSummary(data);
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       const parts: string[] = [];
       if (data.imported > 0) parts.push(`${data.imported} imported`);
       if (data.duplicates > 0) parts.push(`${data.duplicates} duplicate${data.duplicates !== 1 ? "s" : ""} skipped`);
       if (data.failed > 0) parts.push(`${data.failed} failed`);
+
+      const allFilteredOut = data.imported === 0 && data.rawCount > 0;
       toast({
-        title: data.imported > 0 ? "Import Complete" : "Nothing New Imported",
-        description: parts.join(", ") + (data.imported > 0 ? ". Check Jobs Inbox." : ""),
+        title: data.imported > 0 ? "Import Complete" : allFilteredOut ? "All Jobs Already Exist" : "Nothing Imported",
+        description: allFilteredOut
+          ? `Apify returned ${data.rawCount} jobs, but all were already in your inbox (duplicates).`
+          : parts.join(", ") + (data.imported > 0 ? ". Check Jobs Inbox." : ""),
         variant: data.imported > 0 ? "default" : "destructive",
       });
     },
@@ -798,14 +805,21 @@ export default function JobDiscovery() {
           )}
 
           {liImportSummary && (
-            <div className="flex items-center gap-4 rounded border bg-muted/50 px-3 py-2 text-sm" data-testid="li-import-summary">
-              <span className="font-medium">Import result:</span>
-              <span className="text-green-600 font-medium">{liImportSummary.imported} imported</span>
-              {liImportSummary.duplicates > 0 && (
-                <span className="text-yellow-600">{liImportSummary.duplicates} duplicate{liImportSummary.duplicates !== 1 ? "s" : ""} skipped</span>
-              )}
-              {liImportSummary.failed > 0 && (
-                <span className="text-destructive">{liImportSummary.failed} failed</span>
+            <div className="space-y-2">
+              <div className="flex items-center gap-4 rounded border bg-muted/50 px-3 py-2 text-sm" data-testid="li-import-summary">
+                <span className="font-medium">Import result:</span>
+                <span className="text-green-600 font-medium">{liImportSummary.imported} imported</span>
+                {liImportSummary.duplicates > 0 && (
+                  <span className="text-yellow-600">{liImportSummary.duplicates} duplicate{liImportSummary.duplicates !== 1 ? "s" : ""} skipped</span>
+                )}
+                {liImportSummary.failed > 0 && (
+                  <span className="text-destructive">{liImportSummary.failed} failed</span>
+                )}
+              </div>
+              {liImportSummary.imported === 0 && liImportSummary.rawCount > 0 && (
+                <div className="rounded border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30 px-3 py-2 text-sm text-amber-800 dark:text-amber-300" data-testid="li-filtered-out-warning">
+                  ⚠ Apify returned {liImportSummary.rawCount} job{liImportSummary.rawCount !== 1 ? "s" : ""}, but Job Copilot filtered them out — they already exist in your inbox as duplicates.
+                </div>
               )}
             </div>
           )}

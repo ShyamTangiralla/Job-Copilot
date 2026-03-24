@@ -1331,7 +1331,14 @@ export async function registerRoutes(
         return res.status(400).json({ message: "At least one non-empty role is required" });
       }
 
+      console.log(`[LinkedIn Search] ── Starting search ──`);
+      console.log(`[LinkedIn Search] Job roles sent: ${roleList.join(", ")}`);
+      console.log(`[LinkedIn Search] Location sent: ${location || "United States"}`);
+      console.log(`[LinkedIn Search] Global Discovery filters applied: NONE — LinkedIn Search is independent`);
+
       const results = await searchLinkedInJobs(roleList, location || "", apifyToken.trim());
+
+      console.log(`[LinkedIn Search] ── Search complete: ${results.length} jobs returned to frontend ──`);
 
       res.json({
         results,
@@ -1340,6 +1347,7 @@ export async function registerRoutes(
         location: location || "United States",
       });
     } catch (e: any) {
+      console.error(`[LinkedIn Search] Search failed: ${e.message}`);
       res.status(500).json({ message: e.message });
     }
   });
@@ -1353,6 +1361,8 @@ export async function registerRoutes(
       if (!Array.isArray(jobs) || jobs.length === 0) {
         return res.status(400).json({ message: "jobs must be a non-empty array" });
       }
+
+      console.log(`[LinkedIn Import] ── Starting import of ${jobs.length} jobs ──`);
 
       // Generate a scan batch label for this LinkedIn import run (mirrors discovery.ts pattern)
       const now = new Date();
@@ -1410,6 +1420,12 @@ export async function registerRoutes(
         }
       }
 
+      console.log(`[LinkedIn Import] ── Import complete: ${imported} inserted, ${duplicates} duplicates, ${failed} failed (of ${jobs.length} total) ──`);
+      if (imported === 0 && jobs.length > 0) {
+        console.log(`[LinkedIn Import] WARNING: ${jobs.length} jobs were received from Apify but 0 were inserted. Most likely all are duplicates.`);
+        duplicateDetails.slice(0, 5).forEach((d) => console.log(`  Duplicate: "${d.title}" @ ${d.company} — reason: ${d.reason}`));
+      }
+
       res.json({
         imported,
         duplicates,
@@ -1419,6 +1435,7 @@ export async function registerRoutes(
         failedDetails,
         scanBatchLabel,
         scanDate,
+        rawCount: jobs.length,
       });
     } catch (e: any) {
       res.status(500).json({ message: e.message });

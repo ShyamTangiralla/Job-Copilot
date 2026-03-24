@@ -47,12 +47,15 @@ function normalizeForDedup(url: string): string {
 // ---------------------------------------------------------------------------
 
 function buildActorInput(role: string, location: string) {
+  // NOTE: dateSincePosted intentionally NOT set — we let the actor return its
+  // default range so results are not artificially limited to the last 24h.
+  // Duplicate detection in the import step prevents re-importing known jobs.
   return {
     searchQueries: [
       {
         searchQuery: role,
         location: location || "United States",
-        dateSincePosted: "past-24h",
+        dateSincePosted: "past-week",
       },
     ],
     maxItems: 50,
