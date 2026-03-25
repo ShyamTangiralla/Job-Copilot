@@ -1939,6 +1939,195 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Analytics ────────────────────────────────────────────────────────────────
+
+  app.get("/api/analytics", async (req, res) => {
+    try {
+      const [allJobs, allVersions] = await Promise.all([
+        storage.getJobs(),
+        storage.getResumeVersions(),
+      ]);
+
+      const APPLIED_STATUSES = new Set(["Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response"]);
+      const INTERVIEW_STATUSES = new Set(["Interview", "Final Round", "Offer"]);
+
+      // ── Source split ──────────────────────────────────────────────────────────
+      const totalJobsScraped = allJobs.filter(j => j.source === "LinkedIn" || j.source === "Apify" || j.source === "Discovery").length;
+      const totalJobsImported = allJobs.filter(j => j.importSource || (j.source !== "LinkedIn" && j.source !== "Apify" && j.source !== "Discovery")).length;
+
+      // ── Application totals ────────────────────────────────────────────────────
+      const applied = allJobs.filter(j => APPLIED_STATUSES.has(j.status));
+      const interviews = allJobs.filter(j => INTERVIEW_STATUSES.has(j.status));
+      const totalApplications = applied.length;
+      const totalInterviews = interviews.length;
+      const conversionRate = totalApplications > 0 ? Math.round((totalInterviews / totalApplications) * 100) : 0;
+
+      // ── Avg ATS score of applied jobs ─────────────────────────────────────────
+      const atsApplied = applied.filter(j => (j.atsScoreAtApply ?? 0) > 0).map(j => j.atsScoreAtApply!);
+      const avgAtsScoreApplied = atsApplied.length > 0 ? Math.round(atsApplied.reduce((a, b) => a + b, 0) / atsApplied.length) : 0;
+
+      // ── Time metrics ──────────────────────────────────────────────────────────
+      const postedToApplied: number[] = [];
+      const appliedToInterview: number[] = [];
+
+      for (const j of applied) {
+        if (j.datePosted && j.dateApplied) {
+          const days = (new Date(j.dateApplied).getTime() - new Date(j.datePosted).getTime()) / 86400000;
+          if (days >= 0 && days < 365) postedToApplied.push(days);
+        }
+        if (j.dateApplied && j.interviewDate) {
+          const days = (new Date(j.interviewDate).getTime() - new Date(j.dateApplied).getTime()) / 86400000;
+          if (days >= 0 && days < 365) appliedToInterview.push(days);
+        }
+      }
+
+      const avgDaysPostedToApplied = postedToApplied.length > 0
+        ? Math.round(postedToApplied.reduce((a, b) => a + b, 0) / postedToApplied.length)
+        : null;
+      const avgDaysAppliedToInterview = appliedToInterview.length > 0
+        ? Math.round(appliedToInterview.reduce((a, b) => a + b, 0) / appliedToInterview.length)
+        : null;
+
+      // ── Applications per week (last 16 weeks) ─────────────────────────────────
+      const weekMap: Record<string, number> = {};
+      for (let w = 15; w >= 0; w--) {
+        const d = new Date();
+        d.setDate(d.getDate() - w * 7);
+        const mon = new Date(d);
+        mon.setDate(d.getDate() - d.getDay() + 1);
+        const key = mon.toISOString().split("T")[0];
+        weekMap[key] = 0;
+      }
+      for (const j of applied) {
+        if (!j.dateApplied) continue;
+        const d = new Date(j.dateApplied);
+        const mon = new Date(d);
+        mon.setDate(d.getDate() - d.getDay() + 1);
+        const key = mon.toISOString().split("T")[0];
+        if (key in weekMap) weekMap[key]++;
+      }
+      const applicationsPerWeek = Object.entries(weekMap)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([week, count]) => ({ week, count }));
+
+      // ── Jobs scraped per day (last 30 days) ────────────────────────────────────
+      const dayMap: Record<string, number> = {};
+      for (let d = 29; d >= 0; d--) {
+        const dt = new Date();
+        dt.setDate(dt.getDate() - d);
+        dayMap[dt.toISOString().split("T")[0]] = 0;
+      }
+      for (const j of allJobs) {
+        const key = new Date(j.createdAt).toISOString().split("T")[0];
+        if (key in dayMap) dayMap[key]++;
+      }
+      const jobsPerDay = Object.entries(dayMap)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([date, count]) => ({ date, count }));
+
+      // ── ATS score distribution (applied jobs with scores) ─────────────────────
+      const buckets = [
+        { range: "0–19", min: 0, max: 19 },
+        { range: "20–39", min: 20, max: 39 },
+        { range: "40–59", min: 40, max: 59 },
+        { range: "60–69", min: 60, max: 69 },
+        { range: "70–79", min: 70, max: 79 },
+        { range: "80–89", min: 80, max: 89 },
+        { range: "90–100", min: 90, max: 100 },
+      ];
+      const atsAll = applied.filter(j => (j.atsScoreAtApply ?? 0) > 0);
+      const atsDistribution = buckets.map(b => ({
+        range: b.range,
+        count: atsAll.filter(j => j.atsScoreAtApply! >= b.min && j.atsScoreAtApply! <= b.max).length,
+      }));
+
+      // ── Resume version vs interview rate ──────────────────────────────────────
+      const versionMap: Record<number, { label: string; applied: number; interviews: number }> = {};
+      for (const j of applied) {
+        if (!j.resumeVersionId) continue;
+        if (!versionMap[j.resumeVersionId]) {
+          const v = allVersions.find(v => v.id === j.resumeVersionId);
+          versionMap[j.resumeVersionId] = {
+            label: v ? `${v.versionLabel} (${v.jobTitle || v.company || "?"})` : `v#${j.resumeVersionId}`,
+            applied: 0,
+            interviews: 0,
+          };
+        }
+        versionMap[j.resumeVersionId].applied++;
+        if (INTERVIEW_STATUSES.has(j.status)) versionMap[j.resumeVersionId].interviews++;
+      }
+      const versionInterviewRate = Object.values(versionMap).map(v => ({
+        version: v.label,
+        applied: v.applied,
+        interviews: v.interviews,
+        rate: v.applied > 0 ? Math.round((v.interviews / v.applied) * 100) : 0,
+      })).sort((a, b) => b.rate - a.rate).slice(0, 10);
+
+      // ── Top companies applied ─────────────────────────────────────────────────
+      const companyMap: Record<string, number> = {};
+      for (const j of applied) {
+        if (j.company) companyMap[j.company] = (companyMap[j.company] ?? 0) + 1;
+      }
+      const topCompanies = Object.entries(companyMap)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([company, count]) => ({ company, count }));
+
+      // ── Top job titles applied ────────────────────────────────────────────────
+      // Normalize: strip "Senior", "Junior", "Lead" etc. for cleaner grouping
+      const titleMap: Record<string, number> = {};
+      for (const j of applied) {
+        if (j.title) {
+          const t = j.title.trim();
+          titleMap[t] = (titleMap[t] ?? 0) + 1;
+        }
+      }
+      const topTitles = Object.entries(titleMap)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([title, count]) => ({ title, count }));
+
+      // ── ATS improvement from versions ─────────────────────────────────────────
+      const atsImprovements = allVersions
+        .filter(v => v.atsScoreBefore > 0 && v.atsScoreAfter > v.atsScoreBefore)
+        .map(v => ({ label: v.versionLabel, before: v.atsScoreBefore, after: v.atsScoreAfter, delta: v.atsScoreAfter - v.atsScoreBefore }))
+        .sort((a, b) => b.delta - a.delta)
+        .slice(0, 8);
+
+      // ── Status funnel ─────────────────────────────────────────────────────────
+      const statusFunnel = [
+        "New", "Reviewed", "Ready to Apply", "Saved",
+        "Applied", "Interview", "Final Round", "Offer",
+        "Rejected", "No Response",
+      ].map(s => ({ status: s, count: allJobs.filter(j => j.status === s).length }));
+
+      res.json({
+        totalJobsScraped,
+        totalJobsImported,
+        totalJobs: allJobs.length,
+        totalApplications,
+        totalInterviews,
+        conversionRate,
+        avgAtsScoreApplied,
+        avgDaysPostedToApplied,
+        avgDaysAppliedToInterview,
+        applicationsPerWeek,
+        jobsPerDay,
+        atsDistribution,
+        versionInterviewRate,
+        topCompanies,
+        topTitles,
+        atsImprovements,
+        statusFunnel,
+        totalVersions: allVersions.length,
+        avgAtsBefore: allVersions.length > 0 ? Math.round(allVersions.reduce((a, v) => a + v.atsScoreBefore, 0) / allVersions.length) : 0,
+        avgAtsAfter: allVersions.length > 0 ? Math.round(allVersions.reduce((a, v) => a + v.atsScoreAfter, 0) / allVersions.length) : 0,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // ─── Resume Version Management ────────────────────────────────────────────────
 
   // List all resume versions (with optional ?jobId= filter)

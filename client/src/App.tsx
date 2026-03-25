@@ -18,6 +18,7 @@ import JobIntake from "@/pages/job-intake";
 import JobDiscovery from "@/pages/job-discovery";
 import QuickCapture from "@/pages/quick-capture";
 import ResumeVersionsPage from "@/pages/resume-versions";
+import AnalyticsPage from "@/pages/analytics";
 
 function Router() {
   return (
@@ -30,6 +31,7 @@ function Router() {
       <Route path="/jobs/:id" component={JobDetail} />
       <Route path="/resumes" component={ResumeVault} />
       <Route path="/resume-versions" component={ResumeVersionsPage} />
+      <Route path="/analytics" component={AnalyticsPage} />
       <Route path="/profile" component={CandidateProfilePage} />
       <Route path="/tracker" component={Tracker} />
       <Route path="/settings" component={SettingsPage} />
