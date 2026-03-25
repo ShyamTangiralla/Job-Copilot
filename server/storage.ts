@@ -10,9 +10,10 @@ import {
   type DiscoveryResult, type InsertDiscoveryResult,
   type TailoredResume, type InsertTailoredResume,
   type CoverLetter, type InsertCoverLetter,
+  type ResumeVersion, type InsertResumeVersion,
   type AiCache,
   candidateProfile, resumes, jobs, applicationAnswers, activityLog, settings, importLog,
-  discoveryRuns, discoveryResults, tailoredResumes, coverLetters, aiUsageLog, aiCache,
+  discoveryRuns, discoveryResults, tailoredResumes, coverLetters, resumeVersions, aiUsageLog, aiCache,
   ROLE_TYPES,
 } from "@shared/schema";
 import { db } from "./db";
@@ -120,6 +121,13 @@ export interface IStorage {
   getAiCache(feature: string, jobId: number, resumeId?: number): Promise<AiCache | undefined>;
   setAiCache(feature: string, jobId: number, result: any, resumeId?: number): Promise<void>;
   clearAiCache(feature: string, jobId: number): Promise<void>;
+
+  createResumeVersion(data: InsertResumeVersion): Promise<ResumeVersion>;
+  getResumeVersions(): Promise<ResumeVersion[]>;
+  getResumeVersion(id: number): Promise<ResumeVersion | undefined>;
+  getResumeVersionsByJob(jobId: number): Promise<ResumeVersion[]>;
+  deleteResumeVersion(id: number): Promise<void>;
+  nextVersionLabel(jobId: number): Promise<string>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -722,6 +730,39 @@ export class DatabaseStorage implements IStorage {
 
   async clearAiCache(feature: string, jobId: number): Promise<void> {
     await db.delete(aiCache).where(and(eq(aiCache.feature, feature), eq(aiCache.jobId, jobId)));
+  }
+
+  // ─── Resume Versions ────────────────────────────────────────────────────────
+
+  async createResumeVersion(data: InsertResumeVersion): Promise<ResumeVersion> {
+    const [created] = await db.insert(resumeVersions).values(data).returning();
+    return created;
+  }
+
+  async getResumeVersions(): Promise<ResumeVersion[]> {
+    return db.select().from(resumeVersions).orderBy(desc(resumeVersions.createdAt));
+  }
+
+  async getResumeVersion(id: number): Promise<ResumeVersion | undefined> {
+    const rows = await db.select().from(resumeVersions).where(eq(resumeVersions.id, id));
+    return rows[0];
+  }
+
+  async getResumeVersionsByJob(jobId: number): Promise<ResumeVersion[]> {
+    return db.select().from(resumeVersions)
+      .where(eq(resumeVersions.jobId, jobId))
+      .orderBy(desc(resumeVersions.createdAt));
+  }
+
+  async deleteResumeVersion(id: number): Promise<void> {
+    await db.delete(resumeVersions).where(eq(resumeVersions.id, id));
+  }
+
+  async nextVersionLabel(jobId: number): Promise<string> {
+    const existing = await db.select({ id: resumeVersions.id })
+      .from(resumeVersions)
+      .where(eq(resumeVersions.jobId, jobId));
+    return `v${existing.length + 1}`;
   }
 }
 

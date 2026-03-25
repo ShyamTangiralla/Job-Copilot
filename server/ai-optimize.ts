@@ -126,9 +126,21 @@ ${missingKeywords.slice(0, 20).join(", ")}`;
   return suggestions;
 }
 
-// ─── Legacy one-shot optimization (kept for compatibility) ───────
+// ─── Structured sections returned by the AI ──────────────────────
+export interface Resumesections {
+  name: string;
+  contact: string;
+  summary: string;
+  skills: string;
+  experience: string;
+  projects: string;
+  education: string;
+  certifications: string;
+}
+
 export interface AIOptimizeResult {
   tailoredResume: string;
+  sections: Resumesections;
   missingKeywords: string[];
   skillsToHighlight: string[];
   addedKeywords: string[];
@@ -139,7 +151,32 @@ export interface AIOptimizeResult {
   usedEnrichmentPass: boolean;
 }
 
-const FIRST_PASS_PROMPT = `Act as a senior resume writer and hiring manager. Rewrite the candidate's resume to be more competitive for the given job description. Keep all changes truthful and directly supported by existing experience. No buzzwords. No fabricated experience. Return the full tailored resume only, no commentary.`;
+// ─── Structured optimization prompt ──────────────────────────────
+// The AI returns a JSON object with each resume section separately.
+// This feeds directly into the template-based DOCX/PDF generator
+// without requiring any further text-to-sections parsing.
+const STRUCTURED_OPTIMIZE_PROMPT = `You are a senior ATS resume writer and hiring specialist.
+
+Rewrite the candidate's resume to be highly competitive for the given job description.
+Return a JSON object with EXACTLY these keys — no other keys, no extra text:
+
+{
+  "name": "candidate full name (copy exactly from original)",
+  "contact": "single contact line: email | phone | linkedin (copy exactly from original)",
+  "summary": "3-sentence professional summary tailored to this job. Strong action opening. 2-3 role-relevant keywords naturally integrated.",
+  "skills": "comma-separated skills list. Put the most job-relevant skills first. Include only skills the candidate truthfully has.",
+  "experience": "full experience section. Each job: 'Company | Title | Start – End' on one line, then 3-6 bullet points each starting with •. Bullets must start with strong action verbs. Include metrics where the original has them.",
+  "projects": "full projects section in same format as experience, or empty string if original has none",
+  "education": "education section — copy exactly from original, including institution, degree, and year",
+  "certifications": "certifications section — copy exactly from original, or empty string if none"
+}
+
+Absolute rules:
+- NEVER invent companies, titles, dates, degrees, metrics, or tools not in the original resume
+- Only add keywords that are truthfully supported by demonstrated experience
+- Use • (bullet character) for all bullets — never use dash or asterisk
+- Keep all dates, company names, and job titles exactly as in the original
+- Return ONLY the JSON object — no markdown, no fences, no commentary`;
 
 export async function aiOptimizeResume(
   resumeText: string,
@@ -154,14 +191,59 @@ export async function aiOptimizeResume(
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
     messages: [
-      { role: "system", content: FIRST_PASS_PROMPT },
-      { role: "user", content: `RESUME:\n${resumeText}\n\nJOB:\n${jobDescription}\n\nMISSING KEYWORDS:\n${missingKeywords.join(", ")}` },
+      { role: "system", content: STRUCTURED_OPTIMIZE_PROMPT },
+      {
+        role: "user",
+        content: `RESUME:\n${resumeText}\n\nJOB DESCRIPTION:\n${jobDescription.slice(0, 6000)}\n\nMISSING KEYWORDS TO INTEGRATE (only if truthfully supported):\n${missingKeywords.join(", ")}`,
+      },
     ],
-    temperature: 0.35,
-    max_tokens: 2500,
+    response_format: { type: "json_object" },
+    temperature: 0.3,
+    max_tokens: 3000,
   });
 
-  const tailoredResume = response.choices[0]?.message?.content?.trim() ?? "";
+  const raw = response.choices[0]?.message?.content?.trim() ?? "{}";
+  let parsed: any = {};
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = {};
+  }
+
+  const sections: Resumesections = {
+    name:           String(parsed.name           ?? ""),
+    contact:        String(parsed.contact        ?? ""),
+    summary:        String(parsed.summary        ?? ""),
+    skills:         String(parsed.skills         ?? ""),
+    experience:     String(parsed.experience     ?? ""),
+    projects:       String(parsed.projects       ?? ""),
+    education:      String(parsed.education      ?? ""),
+    certifications: String(parsed.certifications ?? ""),
+  };
+
+  // Reconstruct a single text block from sections for the editor and scoring
+  const sectionLines = [
+    sections.name,
+    sections.contact,
+    "",
+    "SUMMARY",
+    sections.summary,
+    "",
+    "SKILLS",
+    sections.skills,
+    "",
+    "EXPERIENCE",
+    sections.experience,
+  ];
+  if (sections.projects.trim()) {
+    sectionLines.push("", "PROJECTS", sections.projects);
+  }
+  sectionLines.push("", "EDUCATION", sections.education);
+  if (sections.certifications.trim()) {
+    sectionLines.push("", "CERTIFICATIONS", sections.certifications);
+  }
+  const tailoredResume = sectionLines.join("\n").trim();
+
   const finalBreakdown = calculateATSBreakdown(tailoredResume, jobDescription);
 
   const phraseTest = (text: string, kw: string) =>
@@ -169,6 +251,7 @@ export async function aiOptimizeResume(
 
   return {
     tailoredResume,
+    sections,
     missingKeywords,
     skillsToHighlight,
     addedKeywords: missingKeywords.filter(k => phraseTest(tailoredResume, k)),

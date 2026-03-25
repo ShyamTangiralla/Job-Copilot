@@ -4,7 +4,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { storage } from "./storage";
-import { insertJobSchema, insertResumeSchema, insertApplicationAnswerSchema, insertCandidateProfileSchema } from "@shared/schema";
+import { insertJobSchema, insertResumeSchema, insertApplicationAnswerSchema, insertCandidateProfileSchema, insertResumeVersionSchema } from "@shared/schema";
 import { scrapeJobFromUrl, parseEmailContent, parseBulkInput } from "./scraper";
 import { runDiscovery, stopDiscovery, isDiscoveryRunning } from "./discovery";
 import { analyzeAndTailor, optimizeResume } from "./tailoring";
@@ -1072,14 +1072,45 @@ export async function registerRoutes(
 
   app.post("/api/optimize-resume", async (req, res) => {
     try {
-      const { jobDescription, resumeText } = req.body;
+      const { jobDescription, resumeText, jobId, resumeId, company, jobTitle } = req.body;
       if (!jobDescription || !resumeText) {
         return res.status(400).json({ message: "jobDescription and resumeText are required" });
       }
       if (process.env.OPENAI_API_KEY) {
         try {
           const result = await aiOptimizeResume(resumeText, jobDescription);
-          res.json(result);
+
+          // Auto-save as a structured resume version when linked to a job
+          let savedVersion: any = null;
+          if (jobId) {
+            const parsedJobId = parseInt(String(jobId));
+            if (!isNaN(parsedJobId)) {
+              try {
+                const versionLabel = await storage.nextVersionLabel(parsedJobId);
+                savedVersion = await storage.createResumeVersion({
+                  jobId: parsedJobId,
+                  resumeId: resumeId ? parseInt(String(resumeId)) : undefined,
+                  versionLabel,
+                  company: company ?? "",
+                  jobTitle: jobTitle ?? "",
+                  candidateName: result.sections.name,
+                  contact: result.sections.contact,
+                  summary: result.sections.summary,
+                  skills: result.sections.skills,
+                  experience: result.sections.experience,
+                  projects: result.sections.projects,
+                  education: result.sections.education,
+                  certifications: result.sections.certifications,
+                  atsScoreBefore: result.beforeScore,
+                  atsScoreAfter: result.afterScore,
+                });
+              } catch (saveErr) {
+                console.warn("[optimize-resume] version save failed:", saveErr);
+              }
+            }
+          }
+
+          res.json({ ...result, savedVersion });
         } catch (aiErr: any) {
           const msg: string = aiErr?.message ?? "";
           if (msg.includes("429") || msg.includes("quota") || msg.includes("billing")) {
@@ -1092,6 +1123,8 @@ export async function registerRoutes(
         const beforeBreakdown = calculateATSBreakdown(resumeText, jobDescription);
         res.json({
           ...result,
+          sections: null,
+          savedVersion: null,
           tailoredResume: undefined,
           addedKeywords: [],
           stillMissingKeywords: result.missingKeywords,
@@ -1901,6 +1934,157 @@ export async function registerRoutes(
         skippedMissingFields: insufficient,
         errors: failed,
       });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ─── Resume Version Management ────────────────────────────────────────────────
+
+  // List all resume versions (with optional ?jobId= filter)
+  app.get("/api/resume-versions", async (req, res) => {
+    try {
+      const jobId = req.query.jobId ? parseInt(req.query.jobId as string) : undefined;
+      const versions = jobId
+        ? await storage.getResumeVersionsByJob(jobId)
+        : await storage.getResumeVersions();
+      res.json(versions);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Get a single resume version
+  app.get("/api/resume-versions/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const version = await storage.getResumeVersion(id);
+      if (!version) return res.status(404).json({ message: "Version not found" });
+      res.json(version);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Manually create a resume version (from parsed plain text)
+  app.post("/api/resume-versions", async (req, res) => {
+    try {
+      const {
+        resumeText, jobId, resumeId, company, jobTitle,
+        // Or supply sections directly
+        candidateName, contact, summary, skills, experience, projects, education, certifications,
+      } = req.body;
+
+      let sectionData: any = { candidateName: candidateName ?? "", contact: contact ?? "", summary: summary ?? "", skills: skills ?? "", experience: experience ?? "", projects: projects ?? "", education: education ?? "", certifications: certifications ?? "" };
+
+      // If plain text supplied, parse it into sections
+      if (resumeText && !summary) {
+        const parsed = parseResumeForExport(resumeText);
+        sectionData = {
+          candidateName: parsed.name,
+          contact: parsed.contact,
+          summary: parsed.summary,
+          skills: parsed.skills,
+          experience: parsed.experience,
+          projects: parsed.projects,
+          education: parsed.education,
+          certifications: parsed.certifications,
+        };
+      }
+
+      const parsedJobId = jobId ? parseInt(String(jobId)) : undefined;
+      const versionLabel = parsedJobId ? await storage.nextVersionLabel(parsedJobId) : `v1`;
+
+      const version = await storage.createResumeVersion({
+        jobId: parsedJobId,
+        resumeId: resumeId ? parseInt(String(resumeId)) : undefined,
+        versionLabel,
+        company: company ?? "",
+        jobTitle: jobTitle ?? "",
+        ...sectionData,
+        atsScoreBefore: 0,
+        atsScoreAfter: 0,
+      });
+      res.json(version);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Delete a resume version
+  app.delete("/api/resume-versions/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      await storage.deleteResumeVersion(id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Export a saved version to DOCX
+  app.post("/api/resume-versions/:id/export-docx", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const version = await storage.getResumeVersion(id);
+      if (!version) return res.status(404).json({ message: "Version not found" });
+
+      const sections = {
+        name: version.candidateName,
+        contact: version.contact,
+        summary: version.summary,
+        skills: version.skills,
+        experience: version.experience,
+        projects: version.projects,
+        education: version.education,
+        certifications: version.certifications,
+      };
+
+      let buf: Buffer;
+      if (hasCustomTemplate()) {
+        buf = fillDocxTemplate(getCustomTemplate(), sections);
+      } else {
+        buf = await generateResumeDocx(sections);
+      }
+
+      const label = version.versionLabel || "resume";
+      const safeName = `${version.company || "Resume"}_${version.jobTitle || ""}_${label}`.replace(/[^a-z0-9_\-]/gi, "_");
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeName}.docx"`);
+      res.send(buf);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Export a saved version to PDF
+  app.post("/api/resume-versions/:id/export-pdf", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const version = await storage.getResumeVersion(id);
+      if (!version) return res.status(404).json({ message: "Version not found" });
+
+      const sections = {
+        name: version.candidateName,
+        contact: version.contact,
+        summary: version.summary,
+        skills: version.skills,
+        experience: version.experience,
+        projects: version.projects,
+        education: version.education,
+        certifications: version.certifications,
+      };
+
+      const buf = await generateResumePdf(sections);
+      const label = version.versionLabel || "resume";
+      const safeName = `${version.company || "Resume"}_${version.jobTitle || ""}_${label}`.replace(/[^a-z0-9_\-]/gi, "_");
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeName}.pdf"`);
+      res.send(buf);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

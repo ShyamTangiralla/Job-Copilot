@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { useParams, useLocation } from "wouter";
+import { useParams, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import {
 import {
   ArrowLeft, Sparkles, Copy, FileText, AlertCircle, Download, Save,
   ArrowRight, Info, Check, Minus, Undo2, Loader2, CheckCircle, RefreshCw,
-  FileDown, Eye,
+  FileDown, Eye, History, Camera, ArrowUpRight, TrendingUp, TrendingDown,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
@@ -21,7 +21,7 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { exportTxt, exportResumeDocx, exportResumePdf, fetchResumeSections, type ParsedResumeSections } from "@/lib/export-resume";
-import type { Job, Resume } from "@shared/schema";
+import type { Job, Resume, ResumeVersion } from "@shared/schema";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Suggestion {
@@ -228,6 +228,15 @@ export default function JobOptimize() {
 
   const activeResume = resumes?.find(r => r.active) ?? resumes?.[0];
 
+  const { data: jobVersions = [] } = useQuery<ResumeVersion[]>({
+    queryKey: ["/api/resume-versions", jobId],
+    queryFn: async () => {
+      const res = await fetch(`/api/resume-versions?jobId=${jobId}`);
+      return res.json();
+    },
+    enabled: !!jobId,
+  });
+
   const plainJobDesc = useMemo(
     () => (job?.description ? stripHtml(job.description) : job?.title ?? ""),
     [job]
@@ -299,6 +308,26 @@ export default function JobOptimize() {
       if (error.code === "LIMIT_EXCEEDED") { setLimitReached(true); return; }
       toast({ title: "Could not generate suggestions.", description: error.message, variant: "destructive" });
     },
+  });
+
+  const snapshotMutation = useMutation({
+    mutationFn: async () => {
+      if (!job) throw new Error("No job");
+      const res = await apiRequest("POST", "/api/resume-versions", {
+        resumeText: workingResume,
+        jobId: job.id,
+        resumeId: activeResume?.id,
+        company: job.company,
+        jobTitle: job.title,
+      });
+      if (!res.ok) throw new Error((await res.json()).message ?? "Failed");
+      return res.json() as Promise<ResumeVersion>;
+    },
+    onSuccess: (v) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/resume-versions", jobId] });
+      toast({ title: `Snapshot saved as ${v.versionLabel}` });
+    },
+    onError: (e: any) => toast({ title: "Snapshot failed", description: e.message, variant: "destructive" }),
   });
 
   const saveResumeMutation = useMutation({
@@ -1027,6 +1056,77 @@ export default function JobOptimize() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ─── Version History Panel ──────────────────────────────────────────── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <History className="h-4 w-4 text-primary" />
+              Version History
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => snapshotMutation.mutate()}
+                disabled={snapshotMutation.isPending || !workingResume}
+                data-testid="button-snapshot"
+                className="gap-1.5"
+              >
+                {snapshotMutation.isPending
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : <Camera className="h-3 w-3" />}
+                Save Snapshot
+              </Button>
+              <Link href="/resume-versions">
+                <Button size="sm" variant="ghost" className="gap-1.5" data-testid="link-all-versions">
+                  All Versions <ArrowUpRight className="h-3 w-3" />
+                </Button>
+              </Link>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Saved snapshots for this job. Click "Save Snapshot" to capture the current resume state.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {jobVersions.length === 0 ? (
+            <div className="text-center py-6 text-muted-foreground text-sm">
+              No snapshots yet — click "Save Snapshot" to record the current resume.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {jobVersions.slice(0, 5).map(v => {
+                const delta = (v.atsScoreAfter ?? 0) - (v.atsScoreBefore ?? 0);
+                return (
+                  <div key={v.id} className="flex items-center gap-3 text-sm border rounded-md px-3 py-2" data-testid={`row-version-${v.id}`}>
+                    <Badge variant="secondary" className="font-mono text-xs shrink-0">{v.versionLabel}</Badge>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {new Date(v.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
+                    <span className="flex items-center gap-1 text-xs shrink-0">
+                      <span className={v.atsScoreAfter >= 70 ? "text-green-600" : v.atsScoreAfter >= 50 ? "text-yellow-600" : "text-red-500"}>
+                        {v.atsScoreAfter}%
+                      </span>
+                      {delta > 0 && <span className="text-green-600 flex items-center gap-0.5"><TrendingUp className="h-3 w-3" />+{delta}</span>}
+                      {delta < 0 && <span className="text-red-500 flex items-center gap-0.5"><TrendingDown className="h-3 w-3" />{delta}</span>}
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground flex-1">{v.candidateName}</span>
+                  </div>
+                );
+              })}
+              {jobVersions.length > 5 && (
+                <Link href="/resume-versions">
+                  <button className="text-xs text-primary hover:underline mt-1" data-testid="link-more-versions">
+                    +{jobVersions.length - 5} more → view all
+                  </button>
+                </Link>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

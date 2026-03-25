@@ -10,6 +10,7 @@ import {
   Download,
   Search,
   Bookmark,
+  History,
 } from "lucide-react";
 import {
   Sidebar,
@@ -30,6 +31,7 @@ const navItems = [
   { title: "Quick Capture", url: "/quick-capture", icon: Bookmark },
   { title: "Jobs Inbox", url: "/jobs", icon: Inbox },
   { title: "Resume Vault", url: "/resumes", icon: FileText },
+  { title: "Resume Versions", url: "/resume-versions", icon: History },
   { title: "Candidate Profile", url: "/profile", icon: User },
   { title: "Tracker", url: "/tracker", icon: BarChart3 },
   { title: "Settings", url: "/settings", icon: Settings },

@@ -208,6 +208,35 @@ export const insertCoverLetterSchema = createInsertSchema(coverLetters).omit({ i
 export type InsertCoverLetter = z.infer<typeof insertCoverLetterSchema>;
 export type CoverLetter = typeof coverLetters.$inferSelect;
 
+// ─── Resume Versions ──────────────────────────────────────────────────────────
+// Stores each AI-generated tailored resume as a structured, section-based record.
+// Sections mirror the locked ATS template order. Linked to both a job and the
+// source resume so we can track which version was submitted per application.
+
+export const resumeVersions = pgTable("resume_versions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  jobId: integer("job_id"),
+  resumeId: integer("resume_id"),
+  versionLabel: text("version_label").notNull().default(""),
+  company: text("company").notNull().default(""),
+  jobTitle: text("job_title").notNull().default(""),
+  candidateName: text("candidate_name").notNull().default(""),
+  contact: text("contact").notNull().default(""),
+  summary: text("summary").notNull().default(""),
+  skills: text("skills").notNull().default(""),
+  experience: text("experience").notNull().default(""),
+  projects: text("projects").notNull().default(""),
+  education: text("education").notNull().default(""),
+  certifications: text("certifications").notNull().default(""),
+  atsScoreBefore: integer("ats_score_before").notNull().default(0),
+  atsScoreAfter: integer("ats_score_after").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertResumeVersionSchema = createInsertSchema(resumeVersions).omit({ id: true, createdAt: true });
+export type InsertResumeVersion = z.infer<typeof insertResumeVersionSchema>;
+export type ResumeVersion = typeof resumeVersions.$inferSelect;
+
 export const aiUsageLog = pgTable("ai_usage_log", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   feature: text("feature").notNull(),
