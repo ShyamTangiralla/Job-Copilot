@@ -874,26 +874,30 @@ export default function JobDiscovery() {
                 <p className="font-medium text-blue-800 dark:text-blue-300 mb-0.5">Payload sent:</p>
                 <pre className="bg-blue-100 dark:bg-blue-900/40 rounded p-1 text-xs overflow-x-auto">{JSON.stringify(liDebug.payloadSent, null, 2)}</pre>
               </div>
-              {liDebug.rawSampleItem && (
-                <div className="mt-1 pt-1 border-t border-blue-200 dark:border-blue-700">
-                  <p className="font-medium text-blue-800 dark:text-blue-300 mb-0.5">
-                    Raw Apify item #1 — actual field names &amp; values from actor:
-                  </p>
-                  <pre className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded p-1 text-xs overflow-x-auto max-h-48">
+              <div className="mt-1 pt-1 border-t border-blue-200 dark:border-blue-700">
+                <p className="font-medium text-amber-700 dark:text-amber-400 mb-0.5">
+                  Raw Apify item #1 — actual field names &amp; values from actor:
+                </p>
+                {liDebug.rawSampleItem ? (
+                  <pre className="bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-600 rounded p-2 text-xs overflow-x-auto max-h-64 whitespace-pre">
                     {JSON.stringify(liDebug.rawSampleItem, null, 2)}
                   </pre>
-                </div>
-              )}
-              {liDebug.parsedSampleItem && (
-                <div className="mt-1 pt-1 border-t border-blue-200 dark:border-blue-700">
-                  <p className="font-medium text-blue-800 dark:text-blue-300 mb-0.5">
-                    What our parser extracted from item #1:
-                  </p>
-                  <pre className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded p-1 text-xs overflow-x-auto">
+                ) : (
+                  <p className="text-red-600 dark:text-red-400 text-xs italic">rawSampleItem missing from API response</p>
+                )}
+              </div>
+              <div className="mt-1 pt-1 border-t border-blue-200 dark:border-blue-700">
+                <p className="font-medium text-green-700 dark:text-green-400 mb-0.5">
+                  What our parser extracted from item #1:
+                </p>
+                {liDebug.parsedSampleItem ? (
+                  <pre className="bg-green-50 dark:bg-green-900/30 border border-green-300 dark:border-green-600 rounded p-2 text-xs overflow-x-auto whitespace-pre">
                     {JSON.stringify(liDebug.parsedSampleItem, null, 2)}
                   </pre>
-                </div>
-              )}
+                ) : (
+                  <p className="text-red-600 dark:text-red-400 text-xs italic">parsedSampleItem missing from API response</p>
+                )}
+              </div>
             </div>
           )}
 

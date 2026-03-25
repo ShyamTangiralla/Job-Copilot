@@ -1354,6 +1354,8 @@ export async function registerRoutes(
           status: debug.status,
           payloadSent: debug.payload,
           error: debug.error,
+          rawSampleItem: debug.rawSampleItem ?? null,
+          parsedSampleItem: debug.parsedSampleItem ?? null,
         },
       });
     } catch (e: any) {
