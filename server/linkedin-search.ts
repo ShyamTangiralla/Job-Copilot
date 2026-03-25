@@ -76,20 +76,24 @@ function buildActorInput(roles: string[], location: string): object {
 // ---------------------------------------------------------------------------
 
 function parseRawJob(raw: Record<string, any>): LinkedInJobResult {
-  const title = String(raw.jobTitle || raw.title || raw.position || "Untitled Position").trim();
+  // Use the actor's primary output field names first (from output schema).
+  // Coerce to string and trim; leave as "" if truly absent/null — the import
+  // route has its own last-resort fallbacks so we don't bake placeholder
+  // strings ("Untitled Position" etc.) into the parsed result unnecessarily.
+  const title = String(raw.jobTitle ?? raw.title ?? raw.position ?? "").trim();
 
-  const company = String(raw.companyName || raw.company || "Unknown Company").trim();
+  const company = String(raw.companyName ?? raw.company ?? "").trim();
 
-  const location = String(raw.location || raw.jobLocation || raw.city || "").trim();
+  const location = String(raw.location ?? raw.jobLocation ?? raw.city ?? "").trim();
 
-  // applyUrl is the direct application link; jobUrl is the LinkedIn posting
-  const applyLink = String(raw.applyUrl || raw.jobUrl || raw.url || raw.link || "").trim();
+  // applyUrl is the direct application link; jobUrl is the LinkedIn posting URL
+  const applyLink = String(raw.applyUrl ?? raw.jobUrl ?? raw.url ?? raw.link ?? "").trim();
 
-  // publishedAt is ISO 8601; fall back to postedTime (human-readable)
-  const rawDate = raw.publishedAt || raw.postedTime || raw.postedAt || raw.datePosted || "";
+  // publishedAt is ISO 8601 (primary); fall back to postedTime (human-readable string)
+  const rawDate = raw.publishedAt ?? raw.postedTime ?? raw.postedAt ?? raw.datePosted ?? "";
   const datePosted = extractDate(String(rawDate));
 
-  const description = String(raw.jobDescription || raw.description || raw.descriptionText || raw.snippet || "").trim();
+  const description = String(raw.jobDescription ?? raw.description ?? raw.descriptionText ?? raw.snippet ?? "").trim();
 
   return { title, company, location, applyLink, datePosted, source: "LinkedIn", description };
 }

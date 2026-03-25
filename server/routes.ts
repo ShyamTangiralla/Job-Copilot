@@ -1363,8 +1363,40 @@ export async function registerRoutes(
   });
 
   // POST /api/import-linkedin-jobs
-  // Accepts an array of LinkedIn job objects, deduplicates, inserts, and runs ATS scoring.
+  // Accepts parsed LinkedIn job objects from the frontend, normalizes fields,
+  // computes freshness + work mode, deduplicates, inserts, and runs scoring.
   app.post("/api/import-linkedin-jobs", async (req, res) => {
+    // ── Helpers (scoped to this route) ──────────────────────────────────────
+
+    function liComputeFreshness(datePosted: string): string {
+      if (!datePosted) return "Unknown Date";
+      const posted = new Date(datePosted);
+      if (isNaN(posted.getTime())) return "Unknown Date";
+      const hoursAgo = (Date.now() - posted.getTime()) / (1000 * 60 * 60);
+      if (hoursAgo <= 24) return "Fresh 24h";
+      if (hoursAgo <= 48) return "Fresh 48h";
+      if (hoursAgo <= 72) return "Fresh 72h";
+      if (hoursAgo <= 168) return "Fresh 7d";
+      return "Fresh 7d"; // actor only returns past-week jobs; treat oldest as 7d not "Too Old"
+    }
+
+    // Check location text + description for reliable work-mode signals.
+    // Returns blank string if no signal found (don't assume Remote).
+    function liInferWorkMode(location: string, description: string, title: string): string {
+      const combined = `${location} ${title} ${description}`.toLowerCase();
+      // Prioritise explicit hybrid over remote-only mentions
+      if (combined.includes("hybrid")) return "Hybrid";
+      if (
+        combined.includes("fully remote") ||
+        combined.includes("100% remote") ||
+        combined.includes("work from home") ||
+        combined.includes("work remotely")
+      ) return "Remote";
+      if (combined.includes("remote")) return "Remote";
+      if (combined.includes("on-site") || combined.includes("onsite") || combined.includes("in-office") || combined.includes("in office")) return "Onsite";
+      return ""; // no reliable signal — leave blank rather than guess
+    }
+
     try {
       const { jobs } = req.body;
 
@@ -1374,7 +1406,7 @@ export async function registerRoutes(
 
       console.log(`[LinkedIn Import] ── Starting import of ${jobs.length} jobs ──`);
 
-      // Generate a scan batch label for this LinkedIn import run (mirrors discovery.ts pattern)
+      // Generate a scan batch label (mirrors discovery.ts pattern)
       const now = new Date();
       const dayName = now.toLocaleDateString("en-US", { weekday: "short" });
       const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -1386,17 +1418,49 @@ export async function registerRoutes(
       let imported = 0;
       let duplicates = 0;
       let failed = 0;
+      let debugLogged = false;
       const importedJobs: { id: number; title: string; company: string }[] = [];
       const duplicateDetails: { title: string; company: string; reason: string }[] = [];
       const failedDetails: { title: string; company: string; error: string }[] = [];
 
       for (const raw of jobs) {
-        const title: string = String(raw.title || "Untitled Position").trim();
-        const company: string = String(raw.company || "Unknown Company").trim();
+        // ── Normalize fields from the actor's parsed output ────────────────
+        // These fields come from parseRawJob() in linkedin-search.ts which has
+        // already mapped Apify actor field names → our internal names.
+        const title: string = (String(raw.title || "").trim()) || "Untitled Position";
+        const company: string = (String(raw.company || "").trim()) || "Unknown Company";
         const applyLink: string = String(raw.applyLink || "").trim();
         const location: string = String(raw.location || "").trim();
         const description: string = String(raw.description || "").trim();
         const datePosted: string = String(raw.datePosted || "").trim();
+
+        // ── Enrichment: freshness ──────────────────────────────────────────
+        const freshnessLabel = liComputeFreshness(datePosted);
+
+        // ── Enrichment: work mode ──────────────────────────────────────────
+        // Pass the inferred value (may be ""), never undefined — that would
+        // trigger the DB column default of "Remote" which would be misleading.
+        const workMode = liInferWorkMode(location, description, title);
+
+        // ── Debug log first job ────────────────────────────────────────────
+        if (!debugLogged) {
+          console.log(`[LinkedIn Import] ── Debug: first job raw fields ──`);
+          console.log(`  raw.title       = ${JSON.stringify(raw.title)}`);
+          console.log(`  raw.company     = ${JSON.stringify(raw.company)}`);
+          console.log(`  raw.location    = ${JSON.stringify(raw.location)}`);
+          console.log(`  raw.applyLink   = ${JSON.stringify(raw.applyLink)}`);
+          console.log(`  raw.datePosted  = ${JSON.stringify(raw.datePosted)}`);
+          console.log(`  raw.description = ${JSON.stringify((raw.description || "").slice(0, 120))}`);
+          console.log(`[LinkedIn Import] ── Debug: first job normalized ──`);
+          console.log(`  title           = ${title}`);
+          console.log(`  company         = ${company}`);
+          console.log(`  location        = ${location}`);
+          console.log(`  applyLink       = ${applyLink}`);
+          console.log(`  datePosted      = ${datePosted}`);
+          console.log(`  freshnessLabel  = ${freshnessLabel}`);
+          console.log(`  workMode        = ${workMode ?? "(blank)"}`);
+          debugLogged = true;
+        }
 
         try {
           const dupCheck = await storage.checkDuplicate(title, company, applyLink, datePosted || undefined);
@@ -1406,6 +1470,10 @@ export async function registerRoutes(
             continue;
           }
 
+          // createJob calls classifyAndScore internally which handles:
+          // roleClassification, fitLabel, resumeRecommendation,
+          // applyPriorityScore, applyPriorityLabel, applyPriorityExplanation
+          // freshnessLabel is passed in so scoring uses the correct tier.
           const job = await storage.createJob({
             title,
             company,
@@ -1414,7 +1482,8 @@ export async function registerRoutes(
             description,
             applyLink,
             datePosted: datePosted || undefined,
-            workMode: location.toLowerCase().includes("remote") ? "Remote" : undefined,
+            freshnessLabel,
+            workMode,
             status: "New",
             importSource: "linkedin-search",
             importedAt: new Date(),
@@ -1432,8 +1501,8 @@ export async function registerRoutes(
 
       console.log(`[LinkedIn Import] ── Import complete: ${imported} inserted, ${duplicates} duplicates, ${failed} failed (of ${jobs.length} total) ──`);
       if (imported === 0 && jobs.length > 0) {
-        console.log(`[LinkedIn Import] WARNING: ${jobs.length} jobs were received from Apify but 0 were inserted. Most likely all are duplicates.`);
-        duplicateDetails.slice(0, 5).forEach((d) => console.log(`  Duplicate: "${d.title}" @ ${d.company} — reason: ${d.reason}`));
+        console.log(`[LinkedIn Import] WARNING: ${jobs.length} jobs received but 0 inserted — likely all duplicates.`);
+        duplicateDetails.slice(0, 5).forEach((d) => console.log(`  Duplicate: "${d.title}" @ ${d.company} — ${d.reason}`));
       }
 
       res.json({
