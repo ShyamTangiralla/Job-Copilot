@@ -1468,6 +1468,10 @@ export async function registerRoutes(
             "positionTitle",
             "position",
             "job_title",
+            "jobName",
+            "postingTitle",
+            "jobPostingTitle",
+            "headline",
           );
         const title: string = rawTitle || "Untitled Position";
 
@@ -1475,16 +1479,20 @@ export async function registerRoutes(
           pickField(raw,
             "company",         // parseRawJob output
             "companyName",     // cheap_scraper actor
+            "employerName",    // user-observed alternate field
             "company_name",
             "employer",
             "organization",
             "hiringOrganization",
+            "companyDisplayName",
+            "organizationName",
           );
         const company: string = rawCompany || "Unknown Company";
 
         const location: string =
           pickField(raw,
             "location",
+            "formattedLocation",  // user-observed alternate field
             "jobLocation",
             "city",
             "geoText",
@@ -1497,9 +1505,16 @@ export async function registerRoutes(
             "applyLink",       // parseRawJob output
             "applyUrl",        // cheap_scraper actor (direct apply URL)
             "jobUrl",          // cheap_scraper actor (LinkedIn posting URL)
+            "applicationUrl",
+            "externalApplyLink",
+            "externalUrl",
+            "redirectUrl",
+            "jobPostingUrl",
+            "postingUrl",
+            "href",
+            "canonicalUrl",
             "url",
             "link",
-            "externalApplyLink",
             "jobLink",
           );
 
@@ -1517,9 +1532,11 @@ export async function registerRoutes(
           pickField(raw,
             "datePosted",      // parseRawJob output
             "publishedAt",     // cheap_scraper actor (ISO 8601)
+            "listedAt",        // user-observed alternate field
             "postedAt",
             "date",
             "postedTime",
+            "listedAtStr",
             "timeAgo",
             "posted",
             "createdAt",
@@ -1563,6 +1580,33 @@ export async function registerRoutes(
           }
         }
 
+        // ── Debug: log FIRST item fully (before any skip) ─────────────────
+        // IMPORTANT: this runs BEFORE the quality filter so we always see
+        // the actual field values even when jobs are being skipped.
+        if (!debugLogged) {
+          console.log(`[LinkedIn Import] ── RAW IMPORT ITEM (first of batch) ──`);
+          console.log(`[LinkedIn Import]   field names: ${Object.keys(raw).join(", ")}`);
+          for (const [k, v] of Object.entries(raw as Record<string, any>)) {
+            const descKeys = ["description", "jobDescription", "descriptionText", "body", "text"];
+            if (descKeys.includes(k)) {
+              console.log(`[LinkedIn Import]   raw.${k} = (${String(v ?? "").length} chars)`);
+            } else {
+              console.log(`[LinkedIn Import]   raw.${k} = ${JSON.stringify(v)}`);
+            }
+          }
+          console.log(`[LinkedIn Import] ── Normalized from first item ──`);
+          console.log(`[LinkedIn Import]   rawTitle       = ${JSON.stringify(rawTitle)}`);
+          console.log(`[LinkedIn Import]   title          = ${JSON.stringify(title)}`);
+          console.log(`[LinkedIn Import]   rawCompany     = ${JSON.stringify(rawCompany)}`);
+          console.log(`[LinkedIn Import]   company        = ${JSON.stringify(company)}`);
+          console.log(`[LinkedIn Import]   location       = ${JSON.stringify(location)}`);
+          console.log(`[LinkedIn Import]   applyLink      = ${JSON.stringify(applyLink)}`);
+          console.log(`[LinkedIn Import]   jobUrl         = ${JSON.stringify(jobUrl)}`);
+          console.log(`[LinkedIn Import]   datePosted     = ${JSON.stringify(datePosted)}`);
+          console.log(`[LinkedIn Import]   dedupeKey      = ${JSON.stringify(dedupeKey)}`);
+          debugLogged = true;
+        }
+
         // ── Flag & skip jobs with no usable data ──────────────────────────
         // A job with no URL AND no title is completely unidentifiable — saving
         // it would create a "Untitled Position / Unknown Company" row that
@@ -1573,7 +1617,7 @@ export async function registerRoutes(
           if (insufficientDetails.length < MAX_DETAIL) {
             insufficientDetails.push({ rawKeys: Object.keys(raw).join(", ") });
           }
-          console.log(`[LinkedIn Import] SKIP [insufficient] no title AND no URL — raw keys: ${Object.keys(raw).slice(0, 8).join(", ")}`);
+          console.log(`[LinkedIn Import] SKIP [insufficient] no title AND no URL — rawTitle="${rawTitle}" applyLink="${applyLink}" jobUrl="${jobUrl}"`);
           continue;
         }
 
@@ -1585,31 +1629,6 @@ export async function registerRoutes(
 
         // ── Enrichment: work mode ──────────────────────────────────────────
         const workMode = liInferWorkMode(location, description, title);
-
-        // ── Debug log first job (raw fields + normalized) ─────────────────
-        if (!debugLogged) {
-          console.log(`[LinkedIn Import] ── Debug: first job raw field names: ${Object.keys(raw).join(", ")}`);
-          for (const [k, v] of Object.entries(raw as Record<string, any>)) {
-            if (k === "description" || k === "jobDescription" || k === "descriptionText") {
-              console.log(`[LinkedIn Import]   raw.${k} = (${String(v ?? "").length} chars)`);
-            } else {
-              console.log(`[LinkedIn Import]   raw.${k} = ${JSON.stringify(v)}`);
-            }
-          }
-          console.log(`[LinkedIn Import] ── Debug: first job normalized ──`);
-          console.log(`[LinkedIn Import]   rawTitle       = ${JSON.stringify(rawTitle)}`);
-          console.log(`[LinkedIn Import]   title          = ${JSON.stringify(title)}`);
-          console.log(`[LinkedIn Import]   rawCompany     = ${JSON.stringify(rawCompany)}`);
-          console.log(`[LinkedIn Import]   company        = ${JSON.stringify(company)}`);
-          console.log(`[LinkedIn Import]   location       = ${JSON.stringify(location)}`);
-          console.log(`[LinkedIn Import]   applyLink      = ${JSON.stringify(applyLink)}`);
-          console.log(`[LinkedIn Import]   jobUrl         = ${JSON.stringify(jobUrl)}`);
-          console.log(`[LinkedIn Import]   datePosted     = ${JSON.stringify(datePosted)}`);
-          console.log(`[LinkedIn Import]   dedupeKey      = ${JSON.stringify(dedupeKey)}`);
-          console.log(`[LinkedIn Import]   freshnessLabel = ${JSON.stringify(freshnessLabel)}`);
-          console.log(`[LinkedIn Import]   workMode       = ${JSON.stringify(workMode)}`);
-          debugLogged = true;
-        }
 
         try {
           const dupCheck = await storage.checkDuplicate(title, company, applyLink, datePosted || undefined, dedupeKey || undefined);

@@ -131,6 +131,8 @@ export default function JobDiscovery() {
     status: string;
     payloadSent: object;
     error?: string;
+    rawSampleItem?: Record<string, any>;
+    parsedSampleItem?: Record<string, string>;
   } | null>(null);
 
   const liSearchMutation = useMutation({
@@ -155,6 +157,8 @@ export default function JobDiscovery() {
           status: data.debug.status ?? "",
           payloadSent: data.debug.payloadSent ?? {},
           error: data.debug.error,
+          rawSampleItem: data.debug.rawSampleItem,
+          parsedSampleItem: data.debug.parsedSampleItem,
         });
       } else {
         setLiDebug(null);
@@ -870,6 +874,26 @@ export default function JobDiscovery() {
                 <p className="font-medium text-blue-800 dark:text-blue-300 mb-0.5">Payload sent:</p>
                 <pre className="bg-blue-100 dark:bg-blue-900/40 rounded p-1 text-xs overflow-x-auto">{JSON.stringify(liDebug.payloadSent, null, 2)}</pre>
               </div>
+              {liDebug.rawSampleItem && (
+                <div className="mt-1 pt-1 border-t border-blue-200 dark:border-blue-700">
+                  <p className="font-medium text-blue-800 dark:text-blue-300 mb-0.5">
+                    Raw Apify item #1 — actual field names &amp; values from actor:
+                  </p>
+                  <pre className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded p-1 text-xs overflow-x-auto max-h-48">
+                    {JSON.stringify(liDebug.rawSampleItem, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {liDebug.parsedSampleItem && (
+                <div className="mt-1 pt-1 border-t border-blue-200 dark:border-blue-700">
+                  <p className="font-medium text-blue-800 dark:text-blue-300 mb-0.5">
+                    What our parser extracted from item #1:
+                  </p>
+                  <pre className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded p-1 text-xs overflow-x-auto">
+                    {JSON.stringify(liDebug.parsedSampleItem, null, 2)}
+                  </pre>
+                </div>
+              )}
             </div>
           )}
 

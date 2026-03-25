@@ -171,17 +171,24 @@ function parseRawJob(raw: Record<string, any>): LinkedInJobResult {
   // ── URL fields first — needed for title/company fallback extraction ─────
   // Prefer the direct external apply URL; fall back to the LinkedIn posting URL.
   const applyUrl = pickStr(raw,
-    "applyUrl",           // cheap_scraper: external apply URL
+    "applyUrl",           // cheap_scraper documented: external apply URL
     "externalApplyLink",
     "apply_url",
     "applyLink",          // pre-parsed (if object was already mapped)
+    "applicationUrl",
+    "externalUrl",
+    "redirectUrl",
   );
   const jobUrl = pickStr(raw,
-    "jobUrl",             // cheap_scraper: LinkedIn posting URL
+    "jobUrl",             // cheap_scraper documented: LinkedIn posting URL
     "linkedinUrl",
+    "jobPostingUrl",
+    "postingUrl",
+    "jobLink",
+    "href",
     "url",
     "link",
-    "jobLink",
+    "canonicalUrl",
   );
   const applyLink = applyUrl || jobUrl;
 
@@ -199,6 +206,9 @@ function parseRawJob(raw: Record<string, any>): LinkedInJobResult {
     "role",
     "jobName",
     "name",
+    "postingTitle",
+    "jobPostingTitle",
+    "headline",
   );
   // Do NOT fall back to rawPageTitle itself — it may be a login page, portal
   // page, or un-parseable LinkedIn page title.  If parsedFromTitle.cleanTitle
@@ -209,33 +219,40 @@ function parseRawJob(raw: Record<string, any>): LinkedInJobResult {
   // ── Company ────────────────────────────────────────────────────────────
   const companyFromFields = pickStr(raw,
     "companyName",        // cheap_scraper documented output field
+    "employerName",       // user-observed alternate field
     "company",
     "company_name",
     "employer",
     "organization",
     "hiringOrganization",
     "companyTitle",
+    "companyDisplayName",
+    "organizationName",
   );
   const company = companyFromFields || parsedFromTitle.cleanCompany || "";
 
   // ── Location ───────────────────────────────────────────────────────────
   const location = pickStr(raw,
     "location",           // cheap_scraper documented output field
+    "formattedLocation",  // user-observed alternate field
     "jobLocation",
     "city",
     "geoText",
     "locationText",
     "country",
     "place",
+    "workplaceType",
   );
 
   // ── Date ───────────────────────────────────────────────────────────────
   const rawDate = pickStr(raw,
     "publishedAt",        // cheap_scraper: ISO 8601
+    "listedAt",           // user-observed alternate field
     "postedAt",
     "datePosted",
     "date",
     "postedTime",         // human-readable "2 days ago"
+    "listedAtStr",
     "timeAgo",
     "posted",
     "createdAt",
@@ -323,6 +340,10 @@ export interface SearchDebugInfo {
   rawItemCount: number;
   status: string;
   error?: string;
+  /** Raw first item from Apify dataset — lets us see the exact field names the actor returns */
+  rawSampleItem?: Record<string, any>;
+  /** What parseRawJob extracted from the first raw item */
+  parsedSampleItem?: Record<string, string>;
 }
 
 export interface SearchLinkedInResult {
@@ -428,15 +449,24 @@ export async function searchLinkedInJobs(
 
   if (data.length > 0) {
     const first = data[0] as Record<string, any>;
-    console.log(`[Apify] ── First raw item field names: ${Object.keys(first).join(", ")}`);
-    // Log every non-description field so we can see the exact values
+
+    // ── Full raw dump (CRITICAL for field-name diagnostics) ────────────────
+    // Build a sanitized copy that replaces long description values with
+    // "(N chars)" so logs stay readable.
+    const sanitized: Record<string, any> = {};
     for (const [k, v] of Object.entries(first)) {
-      if (k === "jobDescription" || k === "description" || k === "descriptionText") {
-        console.log(`[Apify]   ${k} = (${String(v ?? "").length} chars)`);
+      const descKeys = ["jobDescription", "description", "descriptionText", "body", "text", "details"];
+      if (descKeys.includes(k) && typeof v === "string" && v.length > 80) {
+        sanitized[k] = `(${v.length} chars)`;
       } else {
-        console.log(`[Apify]   ${k} = ${JSON.stringify(v)}`);
+        sanitized[k] = v;
       }
     }
+    console.log(`[Apify] ── RAW APIFY ITEM (first of ${data.length}): ${JSON.stringify(sanitized, null, 2)}`);
+
+    // Attach the raw sample to debug so the frontend can display it
+    debug.rawSampleItem = sanitized;
+
     // Log what parseRawJob resolves for the first item
     const parsed = parseRawJob(first);
     console.log(`[Apify] ── First item after parseRawJob ──`);
@@ -448,6 +478,17 @@ export async function searchLinkedInJobs(
     console.log(`[Apify]   datePosted  = ${JSON.stringify(parsed.datePosted)}`);
     console.log(`[Apify]   dedupeKey   = ${JSON.stringify(parsed.dedupeKey)}`);
     console.log(`[Apify]   description = (${parsed.description.length} chars)`);
+
+    debug.parsedSampleItem = {
+      title:      parsed.title,
+      company:    parsed.company,
+      location:   parsed.location,
+      applyLink:  parsed.applyLink,
+      jobUrl:     parsed.jobUrl,
+      datePosted: parsed.datePosted,
+      dedupeKey:  parsed.dedupeKey,
+      descriptionChars: String(parsed.description.length),
+    };
   } else {
     console.log(`[Apify] Dataset is empty — actor returned 0 jobs`);
   }
