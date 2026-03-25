@@ -8,15 +8,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
+import {
   ArrowLeft, Sparkles, Copy, FileText, AlertCircle, Download, Save,
   ArrowRight, Info, Check, Minus, Undo2, Loader2, CheckCircle, RefreshCw,
+  FileDown, Eye,
 } from "lucide-react";
 import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { exportTxt, exportDoc, exportPdf } from "@/lib/export-resume";
+import { exportTxt, exportResumeDocx, exportResumePdf, fetchResumeSections, type ParsedResumeSections } from "@/lib/export-resume";
 import type { Job, Resume } from "@shared/schema";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -205,6 +209,14 @@ export default function JobOptimize() {
   const [noApiKey, setNoApiKey] = useState(false);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // ── Export dialog state ─────────────────────────────────────────────────────
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportSections, setExportSections] = useState<ParsedResumeSections | null>(null);
+  const [exportHasTemplate, setExportHasTemplate] = useState(false);
+  const [exportLoadingDocx, setExportLoadingDocx] = useState(false);
+  const [exportLoadingPdf, setExportLoadingPdf] = useState(false);
+  const [exportPreviewLoading, setExportPreviewLoading] = useState(false);
 
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: job, isLoading: jobLoading } = useQuery<Job>({ queryKey: ["/api/jobs", jobId] });
@@ -415,6 +427,48 @@ export default function JobOptimize() {
       toast({ title: "Resume copied to clipboard." });
       setTimeout(() => setCopied(false), 2000);
     });
+  };
+
+  const openExportPreview = async () => {
+    setExportDialogOpen(true);
+    if (exportSections) return; // already loaded
+    setExportPreviewLoading(true);
+    try {
+      const { sections, hasCustomTemplate } = await fetchResumeSections(workingResume);
+      setExportSections(sections);
+      setExportHasTemplate(hasCustomTemplate);
+    } catch {
+      toast({ title: "Could not parse resume sections.", variant: "destructive" });
+      setExportDialogOpen(false);
+    } finally {
+      setExportPreviewLoading(false);
+    }
+  };
+
+  const handleExportDocx = async () => {
+    if (!job) return;
+    setExportLoadingDocx(true);
+    try {
+      await exportResumeDocx(workingResume, `${job.title}_${job.company}`);
+      toast({ title: "DOCX downloaded successfully." });
+    } catch (e: any) {
+      toast({ title: "Export failed", description: e.message, variant: "destructive" });
+    } finally {
+      setExportLoadingDocx(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (!job) return;
+    setExportLoadingPdf(true);
+    try {
+      await exportResumePdf(workingResume, `${job.title}_${job.company}`);
+      toast({ title: "PDF downloaded successfully." });
+    } catch (e: any) {
+      toast({ title: "Export failed", description: e.message, variant: "destructive" });
+    } finally {
+      setExportLoadingPdf(false);
+    }
   };
 
   // ─── Guards ────────────────────────────────────────────────────────────────
@@ -852,9 +906,29 @@ export default function JobOptimize() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => { exportTxt(workingResume, `${job.title}_${job.company}`); toast({ title: "Exported TXT." }); }} data-testid="menu-export-txt">Export TXT</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { exportDoc(workingResume, `${job.title}_${job.company}`); toast({ title: "Exported DOC." }); }} data-testid="menu-export-doc">Export DOC</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { exportPdf(workingResume, `${job.title}_${job.company}`); toast({ title: "Exported PDF." }); }} data-testid="menu-export-pdf">Export PDF</DropdownMenuItem>
+              <DropdownMenuItem onClick={openExportPreview} data-testid="menu-export-preview">
+                <Eye className="h-4 w-4 mr-2" />Preview &amp; Export (ATS)
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={handleExportDocx}
+                disabled={exportLoadingDocx}
+                data-testid="menu-export-docx"
+              >
+                {exportLoadingDocx ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileDown className="h-4 w-4 mr-2" />}
+                Export DOCX
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={handleExportPdf}
+                disabled={exportLoadingPdf}
+                data-testid="menu-export-pdf"
+              >
+                {exportLoadingPdf ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileDown className="h-4 w-4 mr-2" />}
+                Export PDF
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => { exportTxt(workingResume, `${job.title}_${job.company}`); toast({ title: "Exported TXT." }); }} data-testid="menu-export-txt">
+                Export TXT (plain)
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           <Button
@@ -873,6 +947,86 @@ export default function JobOptimize() {
           </Button>
         </div>
       </div>
+
+      {/* ── Export Preview Dialog ─────────────────────────────────────────── */}
+      <Dialog open={exportDialogOpen} onOpenChange={(open) => { setExportDialogOpen(open); if (!open) setExportSections(null); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileDown className="h-5 w-5" />
+              Export ATS Resume
+            </DialogTitle>
+            <DialogDescription>
+              Review the parsed sections below, then download your resume as a properly formatted DOCX or PDF.
+              {exportHasTemplate && <span className="text-green-600 dark:text-green-400 ml-1">Using your custom template.</span>}
+            </DialogDescription>
+          </DialogHeader>
+
+          {exportPreviewLoading && (
+            <div className="flex items-center justify-center py-10 gap-3 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span>Parsing resume sections…</span>
+            </div>
+          )}
+
+          {exportSections && !exportPreviewLoading && (
+            <div className="space-y-4 text-sm">
+              {(
+                [
+                  { key: "name", label: "Name" },
+                  { key: "contact", label: "Contact" },
+                  { key: "summary", label: "Summary" },
+                  { key: "skills", label: "Skills" },
+                  { key: "experience", label: "Experience" },
+                  { key: "projects", label: "Projects" },
+                  { key: "education", label: "Education" },
+                  { key: "certifications", label: "Certifications" },
+                ] as { key: keyof ParsedResumeSections; label: string }[]
+              ).map(({ key, label }) => {
+                const content = exportSections[key];
+                if (!content) return null;
+                return (
+                  <div key={key} className="border rounded-md overflow-hidden">
+                    <div className="bg-muted/50 px-3 py-1.5 flex items-center justify-between">
+                      <span className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
+                      {!content.trim() && <Badge variant="secondary" className="text-xs">Empty</Badge>}
+                    </div>
+                    <div className="px-3 py-2 whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground max-h-36 overflow-y-auto">
+                      {content.trim() || <span className="text-muted-foreground italic">Not detected</span>}
+                    </div>
+                  </div>
+                );
+              })}
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  className="flex-1 gap-2"
+                  onClick={handleExportDocx}
+                  disabled={exportLoadingDocx}
+                  data-testid="button-dialog-export-docx"
+                >
+                  {exportLoadingDocx
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <FileDown className="h-4 w-4" />}
+                  Download DOCX
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1 gap-2"
+                  onClick={handleExportPdf}
+                  disabled={exportLoadingPdf}
+                  data-testid="button-dialog-export-pdf"
+                >
+                  {exportLoadingPdf
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <FileDown className="h-4 w-4" />}
+                  Download PDF
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

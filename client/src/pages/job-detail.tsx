@@ -46,7 +46,7 @@ import {
   Mail,
   RefreshCw,
 } from "lucide-react";
-import { exportPdf } from "@/lib/export-resume";
+import { exportResumePdf } from "@/lib/export-resume";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Job, CandidateProfile, Resume, ApplicationAnswer } from "@shared/schema";
@@ -430,8 +430,13 @@ function CoverLetterGenerator({ job, resumes }: { job: Job; resumes: Resume[] })
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleExportPdf = () => {
-    exportPdf(content, `CoverLetter_${job.company}_${job.title}`);
+  const handleExportPdf = async () => {
+    try {
+      await exportResumePdf(content, `CoverLetter_${job.company}_${job.title}`);
+      toast({ title: "PDF downloaded successfully." });
+    } catch (e: any) {
+      toast({ title: "Export failed", description: e.message, variant: "destructive" });
+    }
   };
 
   const handleBlur = () => {

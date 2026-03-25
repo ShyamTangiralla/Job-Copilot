@@ -174,6 +174,8 @@ Keyword databases by role: Data Analyst, Healthcare Data Analyst, Business Analy
 - `server/scraper.ts` - URL scraping (cheerio), email parsing, bulk input parsing
 - `server/discovery.ts` - Job discovery engine (Greenhouse, Lever, Google Jobs search)
 - `server/tailoring.ts` - Resume tailoring engine (keyword extraction, gap analysis, rule-based suggestions, ATS scoring)
+- `server/docx-export.ts` - ATS resume export: section parser, DOCX generator (`docx` package), PDF generator (`pdfkit`), docxtemplater integration for custom templates
+- `client/src/lib/export-resume.ts` - Client export helpers: exportTxt (plain text), exportResumeDocx (server-side DOCX), exportResumePdf (server-side PDF), fetchResumeSections (preview)
 - `client/src/pages/` - All page components
 
 ## Constants

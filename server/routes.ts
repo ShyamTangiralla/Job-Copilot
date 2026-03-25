@@ -11,6 +11,15 @@ import { analyzeAndTailor, optimizeResume } from "./tailoring";
 import { aiOptimizeResume, generateSuggestions, extractKeywords, generateCoverLetter } from "./ai-optimize";
 import { searchLinkedInJobs } from "./linkedin-search";
 import { calculateATSBreakdown, calculateATSScore } from "./ats";
+import {
+  parseResumeForExport,
+  generateResumeDocx,
+  generateResumePdf,
+  fillDocxTemplate,
+  hasCustomTemplate,
+  getCustomTemplate,
+  saveCustomTemplate,
+} from "./docx-export";
 
 /**
  * Strip HTML tags and decode common entities for server-side text processing.
@@ -184,6 +193,96 @@ export async function registerRoutes(
       res.setHeader("Content-Type", resume.fileType || "application/octet-stream");
       res.setHeader("Content-Disposition", `attachment; filename="${resume.fileName}"`);
       fs.createReadStream(filePath).pipe(res);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ─── ATS Resume Export (DOCX) ───────────────────────────────────────────────
+  app.post("/api/export-resume-docx", async (req, res) => {
+    try {
+      const { resumeText, resumeName } = req.body;
+      if (!resumeText) return res.status(400).json({ message: "resumeText is required" });
+      const sections = parseResumeForExport(resumeText);
+      let buffer: Buffer;
+      if (hasCustomTemplate()) {
+        const templateBuffer = getCustomTemplate();
+        buffer = fillDocxTemplate(templateBuffer, sections);
+      } else {
+        buffer = await generateResumeDocx(sections, resumeName);
+      }
+      const safe = (resumeName || "Resume").replace(/[^a-zA-Z0-9_\-]/g, "_").substring(0, 60);
+      const date = new Date().toISOString().split("T")[0];
+      const filename = `Resume_${safe}_${date}.docx`;
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(buffer);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ─── ATS Resume Export (PDF) ─────────────────────────────────────────────────
+  app.post("/api/export-resume-pdf", async (req, res) => {
+    try {
+      const { resumeText, resumeName } = req.body;
+      if (!resumeText) return res.status(400).json({ message: "resumeText is required" });
+      const sections = parseResumeForExport(resumeText);
+      const buffer = await generateResumePdf(sections, resumeName);
+      const safe = (resumeName || "Resume").replace(/[^a-zA-Z0-9_\-]/g, "_").substring(0, 60);
+      const date = new Date().toISOString().split("T")[0];
+      const filename = `Resume_${safe}_${date}.pdf`;
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(buffer);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ─── Parse resume into sections (for preview) ─────────────────────────────────
+  app.post("/api/export-resume-preview", async (req, res) => {
+    try {
+      const { resumeText } = req.body;
+      if (!resumeText) return res.status(400).json({ message: "resumeText is required" });
+      const sections = parseResumeForExport(resumeText);
+      res.json({ sections, hasCustomTemplate: hasCustomTemplate() });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ─── ATS Template upload/download ──────────────────────────────────────────
+  const templateUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+  app.get("/api/resume-template", (req, res) => {
+    if (!hasCustomTemplate()) {
+      return res.status(404).json({ message: "No custom template uploaded" });
+    }
+    const buffer = getCustomTemplate();
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", `attachment; filename="ats-resume-template.docx"`);
+    res.send(buffer);
+  });
+
+  app.post("/api/resume-template", templateUpload.single("template"), (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      if (!req.file.originalname.endsWith(".docx")) {
+        return res.status(400).json({ message: "Only .docx files are accepted as templates" });
+      }
+      saveCustomTemplate(req.file.buffer);
+      res.json({ message: "Template saved successfully" });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/resume-template", (req, res) => {
+    try {
+      if (!hasCustomTemplate()) return res.status(404).json({ message: "No template to delete" });
+      fs.unlinkSync(CUSTOM_TEMPLATE_PATH);
+      res.json({ message: "Template deleted" });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

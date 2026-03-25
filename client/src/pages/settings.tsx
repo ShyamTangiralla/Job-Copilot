@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Settings as SettingsIcon, Plus, X, RefreshCw, Target, Sparkles, Brain, FileText, BarChart3 } from "lucide-react";
+import { Settings as SettingsIcon, Plus, X, RefreshCw, Target, Sparkles, Brain, FileText, BarChart3, Upload, Trash2, Download, FileDown } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
@@ -48,6 +48,49 @@ export default function SettingsPage() {
   const { data: aiUsage } = useQuery<{ total: number; byFeature: Record<string, number> }>({
     queryKey: ["/api/ai-usage"],
   });
+
+  const { data: templateStatus, refetch: refetchTemplate } = useQuery<{ exists: boolean }>({
+    queryKey: ["/api/resume-template-status"],
+    queryFn: async () => {
+      const res = await fetch("/api/resume-template");
+      return { exists: res.ok };
+    },
+  });
+  const [templateUploading, setTemplateUploading] = useState(false);
+
+  const handleTemplateUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith(".docx")) {
+      toast({ title: "Please upload a .docx file", variant: "destructive" });
+      return;
+    }
+    setTemplateUploading(true);
+    try {
+      const form = new FormData();
+      form.append("template", file);
+      const res = await fetch("/api/resume-template", { method: "POST", body: form });
+      if (!res.ok) throw new Error((await res.json()).message);
+      toast({ title: "Template uploaded", description: "Your custom DOCX template is now active." });
+      refetchTemplate();
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    } finally {
+      setTemplateUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleTemplateDelete = async () => {
+    try {
+      const res = await fetch("/api/resume-template", { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json()).message);
+      toast({ title: "Template removed", description: "Reverted to built-in ATS layout." });
+      refetchTemplate();
+    } catch (err: any) {
+      toast({ title: "Failed to remove template", description: err.message, variant: "destructive" });
+    }
+  };
 
   useEffect(() => {
     if (savedWeights) setWeights(savedWeights);
@@ -344,6 +387,70 @@ export default function SettingsPage() {
                 Job Match
               </div>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── ATS Resume Template ─────────────────────────────────────────── */}
+      <Card data-testid="card-ats-template">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-medium flex items-center gap-2">
+            <FileDown className="h-4 w-4 text-primary" />
+            ATS Resume Export Template
+          </CardTitle>
+          <CardDescription>
+            Upload your own <strong>.docx</strong> file with <code className="text-xs bg-muted px-1 py-0.5 rounded">{"{{NAME}}"}</code>, <code className="text-xs bg-muted px-1 py-0.5 rounded">{"{{CONTACT}}"}</code>, <code className="text-xs bg-muted px-1 py-0.5 rounded">{"{{SUMMARY}}"}</code>, <code className="text-xs bg-muted px-1 py-0.5 rounded">{"{{SKILLS}}"}</code>, <code className="text-xs bg-muted px-1 py-0.5 rounded">{"{{EXPERIENCE}}"}</code>, <code className="text-xs bg-muted px-1 py-0.5 rounded">{"{{PROJECTS}}"}</code>, <code className="text-xs bg-muted px-1 py-0.5 rounded">{"{{EDUCATION}}"}</code>, <code className="text-xs bg-muted px-1 py-0.5 rounded">{"{{CERTIFICATIONS}}"}</code> placeholders.
+            Without a custom template, resumes export using the built-in ATS layout.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-3">
+            {templateStatus?.exists ? (
+              <Badge variant="default" className="bg-green-600 dark:bg-green-700 text-white">Custom template active</Badge>
+            ) : (
+              <Badge variant="secondary">Using built-in ATS layout</Badge>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <label htmlFor="template-upload" className="cursor-pointer">
+              <Button variant="outline" size="sm" className="gap-2 pointer-events-none" asChild={false} disabled={templateUploading} data-testid="button-upload-template">
+                {templateUploading ? (
+                  <><span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />Uploading…</>
+                ) : (
+                  <><Upload className="h-4 w-4" />{templateStatus?.exists ? "Replace Template" : "Upload Template"}</>
+                )}
+              </Button>
+              <input
+                id="template-upload"
+                type="file"
+                accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                onChange={handleTemplateUpload}
+                data-testid="input-template-upload"
+              />
+            </label>
+            {templateStatus?.exists && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => window.open("/api/resume-template", "_blank")}
+                  data-testid="button-download-template"
+                >
+                  <Download className="h-4 w-4" />Download Template
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-destructive hover:text-destructive"
+                  onClick={handleTemplateDelete}
+                  data-testid="button-delete-template"
+                >
+                  <Trash2 className="h-4 w-4" />Remove Template
+                </Button>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>

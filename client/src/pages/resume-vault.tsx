@@ -16,17 +16,18 @@ import {
   DialogTrigger,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Plus, FileText, Pencil, Trash2, Clock, Upload, Eye, Download, File, X, Sparkles, ExternalLink } from "lucide-react";
+import { Plus, FileText, Pencil, Trash2, Clock, Upload, Eye, Download, File, X, Sparkles, ExternalLink, FileDown, Loader2 } from "lucide-react";
 import { useLocation } from "wouter";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { exportTxt, exportDoc, exportPdf } from "@/lib/export-resume";
+import { exportTxt, exportResumeDocx, exportResumePdf } from "@/lib/export-resume";
 import type { Resume } from "@shared/schema";
 
 interface SettingsData {
@@ -527,22 +528,37 @@ export default function ResumeVault() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
+                            onClick={async () => {
+                              try {
+                                await exportResumeDocx(resume.plainText, resume.name);
+                                toast({ title: "DOCX downloaded successfully." });
+                              } catch (e: any) {
+                                toast({ title: "Export failed", description: e.message, variant: "destructive" });
+                              }
+                            }}
+                            data-testid={`menu-export-docx-${resume.id}`}
+                          >
+                            <FileDown className="h-4 w-4 mr-2" />Export DOCX
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={async () => {
+                              try {
+                                await exportResumePdf(resume.plainText, resume.name);
+                                toast({ title: "PDF downloaded successfully." });
+                              } catch (e: any) {
+                                toast({ title: "Export failed", description: e.message, variant: "destructive" });
+                              }
+                            }}
+                            data-testid={`menu-export-pdf-${resume.id}`}
+                          >
+                            <FileDown className="h-4 w-4 mr-2" />Export PDF
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
                             onClick={() => { exportTxt(resume.plainText, resume.name); toast({ title: "Resume exported successfully." }); }}
                             data-testid={`menu-export-txt-${resume.id}`}
                           >
-                            Export TXT
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => { exportDoc(resume.plainText, resume.name); toast({ title: "Resume exported successfully." }); }}
-                            data-testid={`menu-export-doc-${resume.id}`}
-                          >
-                            Export DOC
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => { exportPdf(resume.plainText, resume.name); toast({ title: "Resume exported successfully." }); }}
-                            data-testid={`menu-export-pdf-${resume.id}`}
-                          >
-                            Export PDF
+                            Export TXT (plain)
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
