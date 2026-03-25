@@ -72,28 +72,87 @@ function buildActorInput(roles: string[], location: string): object {
 }
 
 // ---------------------------------------------------------------------------
-// Output field parser — maps cheap_scraper actor fields to our schema
+// Comprehensive field extractor — tries every field name variant in priority
+// order, trims, and returns "" if nothing is found. Never returns a fallback
+// placeholder string; that's the caller's responsibility.
 // ---------------------------------------------------------------------------
 
+function pickStr(raw: Record<string, any>, ...keys: string[]): string {
+  for (const key of keys) {
+    const val = raw[key];
+    if (val !== null && val !== undefined) {
+      const s = String(val).trim();
+      if (s) return s;
+    }
+  }
+  return "";
+}
+
 function parseRawJob(raw: Record<string, any>): LinkedInJobResult {
-  // Use the actor's primary output field names first (from output schema).
-  // Coerce to string and trim; leave as "" if truly absent/null — the import
-  // route has its own last-resort fallbacks so we don't bake placeholder
-  // strings ("Untitled Position" etc.) into the parsed result unnecessarily.
-  const title = String(raw.jobTitle ?? raw.title ?? raw.position ?? "").trim();
+  // Title — cheap_scraper actor: jobTitle; fallback chain covers other scrapers
+  const title = pickStr(raw,
+    "jobTitle",           // cheap_scraper primary
+    "positionTitle",      // some other actors
+    "position",           // generic
+    "job_title",
+    "name",               // rare — only used if nothing else matches
+    // NOTE: intentionally skip plain "title" — it often contains the HTML page
+    // title e.g. "Aquent hiring Data Analyst in United States | LinkedIn"
+  );
 
-  const company = String(raw.companyName ?? raw.company ?? "").trim();
+  // Company — cheap_scraper actor: companyName
+  const company = pickStr(raw,
+    "companyName",        // cheap_scraper primary
+    "company",
+    "company_name",
+    "employer",
+    "organization",
+    "hiringOrganization",
+  );
 
-  const location = String(raw.location ?? raw.jobLocation ?? raw.city ?? "").trim();
+  // Location — cheap_scraper actor: location
+  const location = pickStr(raw,
+    "location",           // cheap_scraper primary
+    "jobLocation",
+    "city",
+    "geoText",
+    "locationText",
+    "country",
+  );
 
-  // applyUrl is the direct application link; jobUrl is the LinkedIn posting URL
-  const applyLink = String(raw.applyUrl ?? raw.jobUrl ?? raw.url ?? raw.link ?? "").trim();
+  // Apply link — prefer direct applyUrl, fall back to LinkedIn jobUrl
+  const applyLink = pickStr(raw,
+    "applyUrl",           // cheap_scraper: direct application URL
+    "jobUrl",             // cheap_scraper: LinkedIn posting URL
+    "url",
+    "link",
+    "externalApplyLink",
+    "applyLink",          // pre-parsed field name (if sent already-parsed)
+    "jobLink",
+  );
 
-  // publishedAt is ISO 8601 (primary); fall back to postedTime (human-readable string)
-  const rawDate = raw.publishedAt ?? raw.postedTime ?? raw.postedAt ?? raw.datePosted ?? "";
-  const datePosted = extractDate(String(rawDate));
+  // Date — cheap_scraper actor: publishedAt (ISO 8601), postedTime (human)
+  const rawDate = pickStr(raw,
+    "publishedAt",        // ISO 8601 preferred
+    "postedAt",
+    "datePosted",
+    "date",
+    "postedTime",         // human-readable "2 days ago" — extractDate handles it
+    "timeAgo",
+    "posted",
+  );
+  const datePosted = extractDate(rawDate);
 
-  const description = String(raw.jobDescription ?? raw.description ?? raw.descriptionText ?? raw.snippet ?? "").trim();
+  // Description — cheap_scraper actor: jobDescription
+  const description = pickStr(raw,
+    "jobDescription",     // cheap_scraper primary
+    "description",
+    "descriptionText",
+    "snippet",
+    "summary",
+    "details",
+    "body",
+  );
 
   return { title, company, location, applyLink, datePosted, source: "LinkedIn", description };
 }
@@ -256,7 +315,25 @@ export async function searchLinkedInJobs(
   console.log(`[Apify] Dataset items fetched: ${data.length} (datasetId: ${datasetId})`);
 
   if (data.length > 0) {
-    console.log(`[Apify] First item keys: ${Object.keys(data[0]).join(", ")}`);
+    const first = data[0] as Record<string, any>;
+    console.log(`[Apify] ── First raw item field names: ${Object.keys(first).join(", ")}`);
+    // Log every non-description field so we can see the exact values
+    for (const [k, v] of Object.entries(first)) {
+      if (k === "jobDescription" || k === "description" || k === "descriptionText") {
+        console.log(`[Apify]   ${k} = (${String(v ?? "").length} chars)`);
+      } else {
+        console.log(`[Apify]   ${k} = ${JSON.stringify(v)}`);
+      }
+    }
+    // Log what parseRawJob resolves for the first item
+    const parsed = parseRawJob(first);
+    console.log(`[Apify] ── First item after parseRawJob ──`);
+    console.log(`[Apify]   title       = ${JSON.stringify(parsed.title)}`);
+    console.log(`[Apify]   company     = ${JSON.stringify(parsed.company)}`);
+    console.log(`[Apify]   location    = ${JSON.stringify(parsed.location)}`);
+    console.log(`[Apify]   applyLink   = ${JSON.stringify(parsed.applyLink)}`);
+    console.log(`[Apify]   datePosted  = ${JSON.stringify(parsed.datePosted)}`);
+    console.log(`[Apify]   description = (${parsed.description.length} chars)`);
   } else {
     console.log(`[Apify] Dataset is empty — actor returned 0 jobs`);
   }

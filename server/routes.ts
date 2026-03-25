@@ -1423,16 +1423,87 @@ export async function registerRoutes(
       const duplicateDetails: { title: string; company: string; reason: string }[] = [];
       const failedDetails: { title: string; company: string; error: string }[] = [];
 
+      // Helper: try a list of field name candidates, return first non-empty trimmed value
+      function pickField(obj: Record<string, any>, ...keys: string[]): string {
+        for (const k of keys) {
+          const v = obj[k];
+          if (v !== null && v !== undefined) {
+            const s = String(v).trim();
+            if (s) return s;
+          }
+        }
+        return "";
+      }
+
       for (const raw of jobs) {
-        // ── Normalize fields from the actor's parsed output ────────────────
-        // These fields come from parseRawJob() in linkedin-search.ts which has
-        // already mapped Apify actor field names → our internal names.
-        const title: string = (String(raw.title || "").trim()) || "Untitled Position";
-        const company: string = (String(raw.company || "").trim()) || "Unknown Company";
-        const applyLink: string = String(raw.applyLink || "").trim();
-        const location: string = String(raw.location || "").trim();
-        const description: string = String(raw.description || "").trim();
-        const datePosted: string = String(raw.datePosted || "").trim();
+        // ── Normalize fields ───────────────────────────────────────────────
+        // Primary field names come from parseRawJob() in linkedin-search.ts.
+        // Fallbacks cover: original Apify actor field names (in case the raw
+        // actor data was ever passed directly), other actor schema variants.
+        //
+        // IMPORTANT: plain "title" is intentionally tried LAST for job title —
+        // LinkedIn page titles look like "Aquent hiring [job] in US | LinkedIn"
+        // which is NOT the job title. jobTitle / positionTitle are reliable.
+        const title: string =
+          pickField(raw,
+            "title",           // parseRawJob output (our internal field)
+            "jobTitle",        // cheap_scraper actor
+            "positionTitle",   // other actors
+            "position",
+            "job_title",
+          ) || "Untitled Position";
+
+        const company: string =
+          pickField(raw,
+            "company",         // parseRawJob output
+            "companyName",     // cheap_scraper actor
+            "company_name",
+            "employer",
+            "organization",
+            "hiringOrganization",
+          ) || "Unknown Company";
+
+        const location: string =
+          pickField(raw,
+            "location",        // both parseRawJob output AND actor field
+            "jobLocation",
+            "city",
+            "geoText",
+            "locationText",
+            "country",
+          );
+
+        const applyLink: string =
+          pickField(raw,
+            "applyLink",       // parseRawJob output
+            "applyUrl",        // cheap_scraper actor (direct apply URL)
+            "jobUrl",          // cheap_scraper actor (LinkedIn posting URL)
+            "url",
+            "link",
+            "externalApplyLink",
+            "jobLink",
+          );
+
+        const description: string =
+          pickField(raw,
+            "description",     // parseRawJob output
+            "jobDescription",  // cheap_scraper actor
+            "descriptionText",
+            "snippet",
+            "summary",
+            "details",
+          );
+
+        const datePosted: string =
+          pickField(raw,
+            "datePosted",      // parseRawJob output
+            "publishedAt",     // cheap_scraper actor (ISO 8601)
+            "postedAt",
+            "date",
+            "postedTime",      // human-readable — freshnessLabel computation handles it
+            "timeAgo",
+            "posted",
+          );
 
         // ── Enrichment: freshness ──────────────────────────────────────────
         const freshnessLabel = liComputeFreshness(datePosted);
@@ -1444,21 +1515,22 @@ export async function registerRoutes(
 
         // ── Debug log first job ────────────────────────────────────────────
         if (!debugLogged) {
-          console.log(`[LinkedIn Import] ── Debug: first job raw fields ──`);
-          console.log(`  raw.title       = ${JSON.stringify(raw.title)}`);
-          console.log(`  raw.company     = ${JSON.stringify(raw.company)}`);
-          console.log(`  raw.location    = ${JSON.stringify(raw.location)}`);
-          console.log(`  raw.applyLink   = ${JSON.stringify(raw.applyLink)}`);
-          console.log(`  raw.datePosted  = ${JSON.stringify(raw.datePosted)}`);
-          console.log(`  raw.description = ${JSON.stringify((raw.description || "").slice(0, 120))}`);
+          console.log(`[LinkedIn Import] ── Debug: first job incoming keys: ${Object.keys(raw).join(", ")}`);
+          for (const [k, v] of Object.entries(raw as Record<string, any>)) {
+            if (k === "description" || k === "jobDescription" || k === "descriptionText") {
+              console.log(`[LinkedIn Import]   raw.${k} = (${String(v ?? "").length} chars)`);
+            } else {
+              console.log(`[LinkedIn Import]   raw.${k} = ${JSON.stringify(v)}`);
+            }
+          }
           console.log(`[LinkedIn Import] ── Debug: first job normalized ──`);
-          console.log(`  title           = ${title}`);
-          console.log(`  company         = ${company}`);
-          console.log(`  location        = ${location}`);
-          console.log(`  applyLink       = ${applyLink}`);
-          console.log(`  datePosted      = ${datePosted}`);
-          console.log(`  freshnessLabel  = ${freshnessLabel}`);
-          console.log(`  workMode        = ${workMode ?? "(blank)"}`);
+          console.log(`[LinkedIn Import]   title          = ${JSON.stringify(title)}`);
+          console.log(`[LinkedIn Import]   company        = ${JSON.stringify(company)}`);
+          console.log(`[LinkedIn Import]   location       = ${JSON.stringify(location)}`);
+          console.log(`[LinkedIn Import]   applyLink      = ${JSON.stringify(applyLink)}`);
+          console.log(`[LinkedIn Import]   datePosted     = ${JSON.stringify(datePosted)}`);
+          console.log(`[LinkedIn Import]   freshnessLabel = ${JSON.stringify(freshnessLabel)}`);
+          console.log(`[LinkedIn Import]   workMode       = ${JSON.stringify(workMode)}`);
           debugLogged = true;
         }
 
