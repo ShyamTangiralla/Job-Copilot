@@ -2260,6 +2260,24 @@ export async function registerRoutes(
 
       const bestVersion = versionInterviewRate.length > 0 ? versionInterviewRate[0] : null;
 
+      // ── Skills trend per month (last 6 months) ────────────────────────────────
+      const TOP_TREND_SKILLS = ["SQL", "Python", "Excel", "Power BI", "Tableau", "R", "Machine Learning", "AWS", "Databricks", "Snowflake"];
+      const trendMonths: string[] = [];
+      for (let m = 5; m >= 0; m--) {
+        const d = new Date();
+        d.setDate(1);
+        d.setMonth(d.getMonth() - m);
+        trendMonths.push(d.toISOString().slice(0, 7));
+      }
+      const skillsTrend = trendMonths.map(month => {
+        const monthJobs = allJobs.filter(j => new Date(j.createdAt).toISOString().slice(0, 7) === month);
+        const entry: Record<string, number | string> = { month };
+        for (const skill of TOP_TREND_SKILLS) {
+          entry[skill] = monthJobs.filter(j => j.description?.toLowerCase().includes(skill.toLowerCase())).length;
+        }
+        return entry;
+      });
+
       res.json({
         totalJobsScraped,
         totalJobsImported,
@@ -2291,6 +2309,7 @@ export async function registerRoutes(
         jobMarketTopTitles,
         jobMarketTopCompanies,
         jobMarketTopSkills,
+        skillsTrend,
         avgMatchScoreByRole,
         totalVersions: allVersions.length,
         avgAtsBefore: allVersions.length > 0 ? Math.round(allVersions.reduce((a, v) => a + v.atsScoreBefore, 0) / allVersions.length) : 0,

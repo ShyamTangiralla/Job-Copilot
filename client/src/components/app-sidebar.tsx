@@ -12,6 +12,7 @@ import {
   Bookmark,
   History,
   LineChart,
+  MessageSquare,
 } from "lucide-react";
 import {
   Sidebar,
@@ -34,6 +35,7 @@ const navItems = [
   { title: "Resume Vault", url: "/resumes", icon: FileText },
   { title: "Resume Versions", url: "/resume-versions", icon: History },
   { title: "Candidate Profile", url: "/profile", icon: User },
+  { title: "Interview Tracker", url: "/interviews", icon: MessageSquare },
   { title: "Tracker", url: "/tracker", icon: BarChart3 },
   { title: "Analytics", url: "/analytics", icon: LineChart },
   { title: "Settings", url: "/settings", icon: Settings },

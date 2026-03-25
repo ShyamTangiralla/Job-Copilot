@@ -17,7 +17,11 @@ import {
   ArrowUp,
   Minus,
   ArrowDown,
+  Bell,
+  AlertCircle,
+  ChevronRight,
 } from "lucide-react";
+import { Link } from "wouter";
 import type { Job, Resume } from "@shared/schema";
 
 export default function Overview() {
@@ -29,8 +33,6 @@ export default function Overview() {
   });
 
   const isLoading = jobsLoading || resumesLoading;
-
-  const today = new Date().toISOString().split("T")[0];
 
   const stats = {
     total: jobs?.length ?? 0,
@@ -51,6 +53,27 @@ export default function Overview() {
   };
 
   const recentJobs = jobs?.slice(0, 5) ?? [];
+
+  const today = new Date();
+  const reminders = (jobs ?? []).filter(job => {
+    if (job.status === "Applied" && job.dateApplied) {
+      const days = Math.floor((today.getTime() - new Date(job.dateApplied).getTime()) / 86400000);
+      return days >= 5;
+    }
+    if ((job.status === "Interview" || job.status === "Final Round") && job.interviewDate) {
+      const days = Math.floor((today.getTime() - new Date(job.interviewDate).getTime()) / 86400000);
+      return days >= 3 && !job.interviewResult;
+    }
+    return false;
+  }).slice(0, 5);
+
+  function reminderLabel(job: Job) {
+    if (job.status === "Applied" && job.dateApplied) {
+      const days = Math.floor((today.getTime() - new Date(job.dateApplied).getTime()) / 86400000);
+      return { text: `No response after ${days} days`, type: "stale" as const };
+    }
+    return { text: "Follow up after interview", type: "interview" as const };
+  }
 
   const statCards = [
     { label: "Total Jobs", value: stats.total, icon: Inbox, color: "text-blue-600 dark:text-blue-400" },
@@ -88,6 +111,44 @@ export default function Overview() {
         <h1 className="text-2xl font-semibold" data-testid="text-page-title">Overview</h1>
         <p className="text-sm text-muted-foreground mt-1">Your job application dashboard at a glance.</p>
       </div>
+
+      {/* Follow-up Reminders */}
+      {!isLoading && reminders.length > 0 && (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-2">
+          <div className="flex items-center gap-2 mb-1">
+            <Bell className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <span className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+              Follow-up Reminders
+            </span>
+            <Badge className="text-[10px] bg-amber-200 text-amber-800 dark:bg-amber-900 dark:text-amber-300 border-0 ml-auto">
+              {reminders.length}
+            </Badge>
+          </div>
+          {reminders.map(job => {
+            const rem = reminderLabel(job);
+            return (
+              <Link key={job.id} href={`/jobs/${job.id}`}>
+                <a className="flex items-center gap-3 rounded-md bg-white dark:bg-amber-950/40 px-3 py-2 border border-amber-100 dark:border-amber-800/50 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors"
+                  data-testid={`reminder-job-${job.id}`}>
+                  <AlertCircle className={`h-4 w-4 shrink-0 ${rem.type === "stale" ? "text-amber-500" : "text-cyan-500"}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">{job.title}</p>
+                    <p className="text-[10px] text-muted-foreground">{job.company} · {rem.text}</p>
+                  </div>
+                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                </a>
+              </Link>
+            );
+          })}
+          {reminders.length === 5 && (
+            <Link href="/interviews">
+              <a className="block text-xs text-amber-700 dark:text-amber-400 hover:underline text-center pt-1">
+                View all in Interview Tracker →
+              </a>
+            </Link>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {isLoading

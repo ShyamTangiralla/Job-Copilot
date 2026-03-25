@@ -45,6 +45,7 @@ interface AnalyticsData {
   jobMarketTopTitles: { title: string; count: number }[];
   jobMarketTopCompanies: { company: string; count: number }[];
   jobMarketTopSkills: { skill: string; count: number }[];
+  skillsTrend: Record<string, string | number>[];
   avgMatchScoreByRole: { role: string; avgScore: number; count: number }[];
   totalVersions: number;
   avgAtsBefore: number;
@@ -777,6 +778,47 @@ export default function AnalyticsPage() {
                     )}
                 </CardContent>
               </Card>
+
+              {/* Skills Trend Over Time */}
+              {data.skillsTrend && data.skillsTrend.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <CardTitle className="text-sm font-medium">Skills Trend Over Time</CardTitle>
+                    <p className="text-xs text-muted-foreground">
+                      How often key skills appear in jobs added each month (last 6 months)
+                    </p>
+                  </CardHeader>
+                  <CardContent className="px-2 pb-4">
+                    <ResponsiveContainer width="100%" height={220}>
+                      <LineChart data={data.skillsTrend} margin={{ top: 4, right: 12, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                        <Tooltip content={<ChartTooltip />} />
+                        {["SQL", "Python", "Excel", "Power BI", "Tableau", "R", "Machine Learning", "AWS", "Databricks", "Snowflake"].map((skill, i) => (
+                          <Line
+                            key={skill}
+                            type="monotone"
+                            dataKey={skill}
+                            stroke={PALETTE[i % PALETTE.length]}
+                            strokeWidth={2}
+                            dot={false}
+                            name={skill}
+                          />
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                    <div className="flex flex-wrap gap-2 mt-2 px-2">
+                      {["SQL", "Python", "Excel", "Power BI", "Tableau", "R", "Machine Learning", "AWS", "Databricks", "Snowflake"].map((skill, i) => (
+                        <span key={skill} className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <span className="inline-block w-2.5 h-0.5 rounded-full" style={{ background: PALETTE[i % PALETTE.length] }} />
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Row 2: top titles + companies from ALL jobs */}
               <div className="grid md:grid-cols-2 gap-4">

@@ -79,6 +79,8 @@ export const jobs = pgTable("jobs", {
   resumeVersionId: integer("resume_version_id"),
   atsScoreAtApply: integer("ats_score_at_apply"),
   resumeGeneratedDate: text("resume_generated_date").notNull().default(""),
+  interviewRound: text("interview_round").notNull().default(""),
+  interviewResult: text("interview_result").notNull().default(""),
 });
 
 export const insertJobSchema = createInsertSchema(jobs).omit({ id: true, createdAt: true });
