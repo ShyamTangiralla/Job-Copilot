@@ -1408,6 +1408,20 @@ export async function registerRoutes(
 
       console.log(`[LinkedIn Import] ── Starting import of ${jobs.length} jobs ──`);
 
+      // ── Log the first received job immediately so we can see what the
+      // frontend sent and verify field names before any processing ──────────
+      const firstReceived = jobs[0] as Record<string, any>;
+      console.log(`[LinkedIn Import] ── RECEIVED PAYLOAD (first of ${jobs.length}) ──`);
+      console.log(`[LinkedIn Import]   field names: ${Object.keys(firstReceived).join(", ")}`);
+      for (const [k, v] of Object.entries(firstReceived)) {
+        const descKeys = ["description", "jobDescription", "descriptionText", "body", "text"];
+        if (descKeys.includes(k) && typeof v === "string" && v.length > 80) {
+          console.log(`[LinkedIn Import]   recv.${k} = (${v.length} chars)`);
+        } else {
+          console.log(`[LinkedIn Import]   recv.${k} = ${JSON.stringify(v)}`);
+        }
+      }
+
       // Generate a scan batch label (mirrors discovery.ts pattern)
       const now = new Date();
       const dayName = now.toLocaleDateString("en-US", { weekday: "short" });
@@ -1421,7 +1435,8 @@ export async function registerRoutes(
       let duplicates = 0;
       let failed = 0;
       let repaired = 0;
-      let insufficient = 0;
+      let insufficient = 0;   // missing title AND URL AND jobUrl
+      let junk = 0;            // login-page / portal redirects
       let missingIds = 0;
       let debugLogged = false;
       // How many of each category to include in per-job detail arrays
@@ -1431,6 +1446,8 @@ export async function registerRoutes(
       const repairedDetails: { id: number; title: string; company: string }[] = [];
       const failedDetails: { title: string; company: string; error: string }[] = [];
       const insufficientDetails: { rawKeys: string }[] = [];
+      // Full per-job skip log (up to MAX_DETAIL entries) for debug response
+      const skipLog: { title: string; reason: string }[] = [];
 
       // Helper: try a list of field name candidates, return first non-empty trimmed value
       const pickField = (obj: Record<string, any>, ...keys: string[]): string => {
@@ -1451,10 +1468,11 @@ export async function registerRoutes(
         // instead of landing on a real job posting.
         const rawPageTitleGuard = String(raw.title ?? "").trim();
         if (/sign[\s-]*in|log[\s-]*in|linkedin login|careers\s+portal/i.test(rawPageTitleGuard)) {
-          insufficient++;
+          junk++;
           if (insufficientDetails.length < MAX_DETAIL) {
             insufficientDetails.push({ rawKeys: `junk_page_title: ${rawPageTitleGuard.slice(0, 60)}` });
           }
+          if (skipLog.length < MAX_DETAIL) skipLog.push({ title: rawPageTitleGuard.slice(0, 60), reason: "junk_page_title" });
           console.log(`[LinkedIn Import] SKIP [junk] page title is login/portal: "${rawPageTitleGuard.slice(0, 80)}"`);
           continue;
         }
@@ -1619,6 +1637,7 @@ export async function registerRoutes(
           if (insufficientDetails.length < MAX_DETAIL) {
             insufficientDetails.push({ rawKeys: Object.keys(raw).join(", ") });
           }
+          if (skipLog.length < MAX_DETAIL) skipLog.push({ title: "(no title)", reason: `missing_fields — rawTitle="${rawTitle}" applyLink="${applyLink}" jobUrl="${jobUrl}"` });
           console.log(`[LinkedIn Import] SKIP [insufficient] no title AND no URL — rawTitle="${rawTitle}" applyLink="${applyLink}" jobUrl="${jobUrl}"`);
           continue;
         }
@@ -1684,6 +1703,7 @@ export async function registerRoutes(
             if (duplicateDetails.length < MAX_DETAIL) {
               duplicateDetails.push({ title, company, reason: dupCheck.reason ?? "duplicate" });
             }
+            if (skipLog.length < MAX_DETAIL) skipLog.push({ title: `${title} @ ${company}`, reason: `duplicate — ${dupCheck.reason ?? "duplicate"}` });
             console.log(`[LinkedIn Import] SKIP [dup/${dupCheck.reason ?? "duplicate"}] "${title}" @ ${company}`);
             continue;
           }
@@ -1744,7 +1764,12 @@ export async function registerRoutes(
       console.log(`[LinkedIn Import]   duplicates   = ${duplicates}`);
       console.log(`[LinkedIn Import]   failed       = ${failed}`);
       console.log(`[LinkedIn Import]   insufficient = ${insufficient}`);
+      console.log(`[LinkedIn Import]   junk         = ${junk}`);
       console.log(`[LinkedIn Import]   missing IDs  = ${missingIds}`);
+      if (skipLog.length > 0) {
+        console.log(`[LinkedIn Import] ── Skip log (up to ${MAX_DETAIL}) ──`);
+        skipLog.forEach((s, i) => console.log(`[LinkedIn Import]   [${i + 1}] ${s.title} → ${s.reason}`));
+      }
 
       res.json({
         imported,
@@ -1752,15 +1777,24 @@ export async function registerRoutes(
         failed,
         repaired,
         insufficient,
+        junk,
         missingIds,
         importedJobs,
         duplicateDetails,
         repairedDetails,
         failedDetails,
         insufficientDetails,
+        skipLog,
         scanBatchLabel,
         scanDate,
         rawCount: jobs.length,
+        // Flat summary for easy UI display
+        totalSelected: jobs.length,
+        inserted: imported,
+        skippedDuplicates: duplicates,
+        skippedInvalid: junk + insufficient,
+        skippedMissingFields: insufficient,
+        errors: failed,
       });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
