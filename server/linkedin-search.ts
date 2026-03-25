@@ -7,18 +7,24 @@
  *
  * Flow: send all roles in one run → poll until SUCCEEDED → fetch dataset items
  *
- * Input schema:
- *   keywords        – string[] — job titles / search terms
- *   location        – string  — location string
+ * Input schema (confirmed from actor error message + actor docs):
+ *   searchKeywords  – string  — job search term (the actor calls this "keyword"
+ *                               in its error message; we send both field names)
+ *   keyword         – string  — same as searchKeywords (actor error-message name)
+ *   location        – string  — location string (e.g. "United States")
  *   publishedAt     – string  — "r86400" (24h) | "r604800" (1 week) | "r2592000" (1 month)
  *   maxItems        – integer — max results (min 150 for pay-per-result billing)
- *   saveOnlyUniqueItems – boolean — deduplicate output (default false)
+ *   saveOnlyUniqueItems – boolean — deduplicate output
+ *   proxyConfiguration  – object  — { useApifyProxy: true } (required for some regions)
  *
  * Output schema (key fields):
  *   jobTitle, companyName, location, jobUrl, applyUrl,
  *   publishedAt (ISO 8601), postedTime (human), jobDescription,
  *   contractType, experienceLevel, workType, applicationsCount,
  *   posterFullName, posterProfileUrl
+ *
+ * NOTE: the actor does NOT accept "keywords" (array) — it requires a single
+ * string.  Multiple roles must be joined into one search string.
  */
 
 const APIFY_ACTOR_ID = "cheap_scraper~linkedin-job-scraper";
@@ -141,12 +147,20 @@ function parseLinkedInPageTitle(raw: string): { cleanTitle: string; cleanCompany
 // ---------------------------------------------------------------------------
 
 function buildActorInput(roles: string[], location: string): object {
+  // The actor requires a single search string — not an array.
+  // Multiple roles are joined with a space so LinkedIn treats them as an OR.
+  // We send both "searchKeywords" (actor's UI field name) and "keyword"
+  // (name mentioned in the actor's own error message) to ensure one hits.
+  const searchString = roles.join(" ");
+
   return {
-    keywords: roles,
-    location: location || "United States",
-    publishedAt: "r604800",      // past week
-    maxItems: 150,               // minimum for pay-per-result billing
-    saveOnlyUniqueItems: true,   // let actor deduplicate by default
+    searchKeywords: searchString,   // actor's input schema field name
+    keyword:        searchString,   // alternate name (actor error message says this)
+    location:       location || "United States",
+    publishedAt:    "r604800",      // past week
+    maxItems:       150,            // minimum for pay-per-result billing
+    saveOnlyUniqueItems: true,
+    proxyConfiguration: { useApifyProxy: true },
   };
 }
 
@@ -447,8 +461,45 @@ export async function searchLinkedInJobs(
   debug.rawItemCount = data.length;
   console.log(`[Apify] Dataset items fetched: ${data.length} (datasetId: ${datasetId})`);
 
-  if (data.length > 0) {
-    const first = data[0] as Record<string, any>;
+  // ── Detect actor-level error items ────────────────────────────────────────
+  // The actor emits fake "error" dataset items when the input is invalid
+  // (e.g. "error_no_start_urls"). Filter them out so they never reach
+  // the parser, and surface a clear error to the caller if ALL items are bad.
+  const errorItems = (data as Record<string, any>[]).filter(
+    (item) => typeof item.status === "string" && item.status.startsWith("error"),
+  );
+  const goodData = (data as Record<string, any>[]).filter(
+    (item) => !(typeof item.status === "string" && item.status.startsWith("error")),
+  );
+
+  if (errorItems.length > 0) {
+    const sample = errorItems[0];
+    console.warn(
+      `[Apify] ⚠ Actor returned ${errorItems.length} error items — status: ${sample.status}, message: ${sample.message ?? "(none)"}`,
+    );
+    debug.rawSampleItem = sample;   // show the error item in the debug panel
+    debug.parsedSampleItem = {
+      title: "", company: "", location: "", applyLink: "", jobUrl: "",
+      datePosted: "", dedupeKey: "", descriptionChars: "0",
+      _actorError: sample.status,
+      _actorMessage: sample.message ?? "",
+    };
+
+    if (goodData.length === 0) {
+      // Every item is an error — the actor couldn't run at all.
+      const msg = `Apify actor error: ${sample.status} — ${sample.message ?? "No valid search URLs could be constructed"}`;
+      debug.error = msg;
+      // Return jobs=[] with the error attached; caller will surface it to user.
+      return { jobs: [], debug };
+    }
+  }
+
+  // Work only with non-error items from here on.
+  const realData = goodData.length > 0 ? goodData : (data as Record<string, any>[]);
+  debug.rawItemCount = realData.length;
+
+  if (realData.length > 0) {
+    const first = realData[0] as Record<string, any>;
 
     // ── Full raw dump (CRITICAL for field-name diagnostics) ────────────────
     // Build a sanitized copy that replaces long description values with
@@ -493,8 +544,8 @@ export async function searchLinkedInJobs(
     console.log(`[Apify] Dataset is empty — actor returned 0 jobs`);
   }
 
-  // Parse and dedup within the batch
-  const allJobs = data.map((item: Record<string, any>) => parseRawJob(item));
+  // Parse and dedup within the batch (only real job items, no error items)
+  const allJobs = realData.map((item: Record<string, any>) => parseRawJob(item));
 
   const seen = new Set<string>();
   const deduped: LinkedInJobResult[] = [];
@@ -511,7 +562,7 @@ export async function searchLinkedInJobs(
     }
   }
 
-  console.log(`[Apify] ── Done: ${deduped.length} unique jobs (raw dataset: ${data.length}) ──`);
+  console.log(`[Apify] ── Done: ${deduped.length} unique jobs (${realData.length} real items from ${data.length} total) ──`);
 
   return { jobs: deduped, debug };
 }
