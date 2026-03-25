@@ -1313,7 +1313,7 @@ export async function registerRoutes(
   // ---------------------------------------------------------------------------
   app.post("/api/search-jobs", async (req, res) => {
     try {
-      const { roles, location, apifyToken } = req.body;
+      const { roles, location, apifyToken, freshness = "24h" } = req.body;
 
       if (!roles || typeof roles !== "string" || !roles.trim()) {
         return res.status(400).json({ message: "roles is required (comma-separated string)" });
@@ -1335,15 +1335,19 @@ export async function registerRoutes(
       console.log(`[LinkedIn Search] Roles: ${roleList.join(", ")}`);
       console.log(`[LinkedIn Search] Location: ${location || "United States"}`);
 
-      const { jobs, debug } = await searchLinkedInJobs(roleList, location || "", apifyToken.trim());
+      const validFreshness = (["24h", "48h", "7d"] as const).includes(freshness) ? freshness as "24h" | "48h" | "7d" : "24h";
+      const { jobs, debug } = await searchLinkedInJobs(roleList, location || "", apifyToken.trim(), validFreshness);
 
-      console.log(`[LinkedIn Search] ── Done: ${jobs.length} unique jobs, ${debug.rawItemCount} Apify dataset items ──`);
+      console.log(`[LinkedIn Search] ── Done: ${jobs.length} unique jobs, ${debug.rawItemCount} Apify dataset items (freshness: ${debug.freshnessUsed ?? validFreshness}${debug.fallbackTriggered ? ", fallback triggered" : ""}) ──`);
 
       res.json({
         results: jobs,
         count: jobs.length,
         rolesSearched: roleList,
         location: location || "United States",
+        freshnessRequested: validFreshness,
+        freshnessUsed: debug.freshnessUsed ?? validFreshness,
+        fallbackTriggered: debug.fallbackTriggered ?? false,
         debug: {
           actorId: debug.actorId,
           rolesSent: debug.rolesSent,
@@ -1353,6 +1357,8 @@ export async function registerRoutes(
           rawItemCount: debug.rawItemCount,
           status: debug.status,
           payloadSent: debug.payload,
+          freshnessUsed: debug.freshnessUsed,
+          fallbackTriggered: debug.fallbackTriggered,
           error: debug.error,
           rawSampleItem: debug.rawSampleItem ?? null,
           parsedSampleItem: debug.parsedSampleItem ?? null,

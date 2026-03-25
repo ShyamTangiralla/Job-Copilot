@@ -146,7 +146,13 @@ function parseLinkedInPageTitle(raw: string): { cleanTitle: string; cleanCompany
 // Actor input builder
 // ---------------------------------------------------------------------------
 
-function buildActorInput(roles: string[], location: string): object {
+const FRESHNESS_TO_PUBLISHED_AT: Record<string, string> = {
+  "24h": "r86400",
+  "48h": "r172800",
+  "7d":  "r604800",
+};
+
+function buildActorInput(roles: string[], location: string, publishedAt: string = "r86400"): object {
   // Actor schema (confirmed): "keyword" must be an array of strings.
   // If the user entered a comma-separated list in one role field, split it
   // so each term becomes its own array element.
@@ -158,7 +164,7 @@ function buildActorInput(roles: string[], location: string): object {
   return {
     keyword:        keywordArray,
     location:       location || "United States",
-    publishedAt:    "r604800",      // past week
+    publishedAt,
     maxItems:       150,            // minimum for pay-per-result billing
     saveOnlyUniqueItems: true,
     proxyConfiguration: { useApifyProxy: true },
@@ -354,6 +360,9 @@ export interface SearchDebugInfo {
   datasetId: string;
   rawItemCount: number;
   status: string;
+  freshnessRequested?: string;
+  freshnessUsed?: string;
+  fallbackTriggered?: boolean;
   error?: string;
   /** Raw first item from Apify dataset — lets us see the exact field names the actor returns */
   rawSampleItem?: Record<string, any>;
@@ -374,9 +383,11 @@ export async function searchLinkedInJobs(
   roles: string[],
   location: string,
   apifyToken: string,
+  freshness: "24h" | "48h" | "7d" = "24h",
 ): Promise<SearchLinkedInResult> {
   const token = encodeURIComponent(apifyToken);
-  const payload = buildActorInput(roles, location);
+  const publishedAt = FRESHNESS_TO_PUBLISHED_AT[freshness] ?? "r86400";
+  const payload = buildActorInput(roles, location, publishedAt);
 
   const debug: SearchDebugInfo = {
     actorId: APIFY_ACTOR_ID,
@@ -387,9 +398,12 @@ export async function searchLinkedInJobs(
     datasetId: "",
     rawItemCount: 0,
     status: "pending",
+    freshnessRequested: freshness,
+    freshnessUsed: freshness,
+    fallbackTriggered: false,
   };
 
-  console.log(`[Apify] ── Starting LinkedIn search ──`);
+  console.log(`[Apify] ── Starting LinkedIn search (freshness: ${freshness} → publishedAt: ${publishedAt}) ──`);
   console.log(`[Apify] actorId: ${APIFY_ACTOR_ID}`);
   console.log(`[Apify] Roles: ${roles.join(", ")}`);
   console.log(`[Apify] Location: ${location || "United States"}`);
@@ -564,6 +578,17 @@ export async function searchLinkedInJobs(
   }
 
   console.log(`[Apify] ── Done: ${deduped.length} unique jobs (${realData.length} real items from ${data.length} total) ──`);
+
+  // Auto-fallback: if 24h window returns fewer than 10 results, expand to 48h.
+  // This ensures the user always gets a meaningful list of fresh jobs.
+  if (freshness === "24h" && deduped.length < 10 && !debug.error) {
+    console.log(`[Apify] Only ${deduped.length} jobs in 24h window — auto-expanding to 48h fallback`);
+    const fallback = await searchLinkedInJobs(roles, location, apifyToken, "48h");
+    fallback.debug.freshnessRequested = "24h";
+    fallback.debug.freshnessUsed = "48h";
+    fallback.debug.fallbackTriggered = true;
+    return fallback;
+  }
 
   return { jobs: deduped, debug };
 }

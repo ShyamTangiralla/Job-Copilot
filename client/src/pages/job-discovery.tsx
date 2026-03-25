@@ -93,8 +93,33 @@ function TagInput({ label, values, onChange, placeholder, testId }: {
 }
 
 // ---------------------------------------------------------------------------
+// Freshness tier helpers — computed from the actual ISO date string returned
+// by the Apify actor (publishedAt field), not from string keywords.
+// ---------------------------------------------------------------------------
+
+function getFreshnessTier(datePosted: string): "24h" | "48h" | "7d" | "old" {
+  if (!datePosted) return "old";
+  const posted = new Date(datePosted);
+  if (isNaN(posted.getTime())) return "old";
+  const hoursAgo = (Date.now() - posted.getTime()) / (1000 * 60 * 60);
+  if (hoursAgo <= 24)  return "24h";
+  if (hoursAgo <= 48)  return "48h";
+  if (hoursAgo <= 168) return "7d";
+  return "old";
+}
+
+function getFreshnessDisplay(tier: string): { label: string; className: string } {
+  switch (tier) {
+    case "24h": return { label: "Posted today",  className: "text-green-700 bg-green-50 border-green-200 dark:text-green-300 dark:bg-green-900/30 dark:border-green-700" };
+    case "48h": return { label: "24–48h ago",    className: "text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-900/30 dark:border-blue-700" };
+    case "7d":  return { label: "This week",     className: "text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-900/30 dark:border-amber-700" };
+    default:    return { label: "Older",         className: "text-muted-foreground bg-muted/40 border-muted" };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Lightweight preview ranking — runs on the client before import so we can
-// send the best-matching jobs first.  No AI call needed.
+// send the best-matching jobs first.  Freshness is the primary signal.
 // ---------------------------------------------------------------------------
 
 function computePreviewScore(job: LinkedInJobResult, searchRoles: string): number {
@@ -103,7 +128,13 @@ function computePreviewScore(job: LinkedInJobResult, searchRoles: string): numbe
   const descLower  = (job.description ?? "").toLowerCase();
   const locLower   = (job.location ?? "").toLowerCase();
 
-  // ── Title relevance (0–40 pts) ───────────────────────────────────────────
+  // ── Freshness (0–40 pts) — primary ranking signal ────────────────────────
+  const tier = getFreshnessTier(job.datePosted ?? "");
+  if      (tier === "24h") score += 40;
+  else if (tier === "48h") score += 30;
+  else if (tier === "7d")  score += 15;
+
+  // ── Title relevance (0–30 pts) ───────────────────────────────────────────
   const roles = searchRoles
     .split(",")
     .map((r) => r.trim().toLowerCase())
@@ -111,16 +142,9 @@ function computePreviewScore(job: LinkedInJobResult, searchRoles: string): numbe
   outer: for (const role of roles) {
     const words = role.split(/\s+/).filter((w) => w.length > 2);
     const matched = words.filter((w) => titleLower.includes(w));
-    if (words.length > 0 && matched.length === words.length) { score += 40; break outer; }
-    if (matched.length > 0)                                   { score += 20; break outer; }
+    if (words.length > 0 && matched.length === words.length) { score += 30; break outer; }
+    if (matched.length > 0)                                   { score += 15; break outer; }
   }
-
-  // ── Freshness (0–25 pts) ─────────────────────────────────────────────────
-  const fp = job.datePosted ?? "";
-  if      (fp.includes("24h")) score += 25;
-  else if (fp.includes("48h")) score += 20;
-  else if (fp.includes("72h")) score += 12;
-  else if (fp.includes("7d"))  score += 5;
 
   // ── Remote / hybrid signal (0–20 pts) ───────────────────────────────────
   const combined = `${locLower} ${descLower}`;
@@ -128,10 +152,10 @@ function computePreviewScore(job: LinkedInJobResult, searchRoles: string): numbe
   else if (combined.includes("remote"))  score += 15;
   else if (combined.includes("hybrid"))  score += 8;
 
-  // ── Description quality (0–15 pts) ──────────────────────────────────────
+  // ── Description quality (0–10 pts) ──────────────────────────────────────
   const dl = descLower.length;
-  if (dl > 2000) score += 15;
-  else if (dl > 500) score += 8;
+  if (dl > 2000) score += 10;
+  else if (dl > 500) score += 5;
 
   return Math.min(score, 100);
 }
@@ -169,9 +193,15 @@ export default function JobDiscovery() {
   const [apifyToken, setApifyToken] = useState("");
   const [liRoles, setLiRoles] = useState("");
   const [liLocation, setLiLocation] = useState("United States");
+  const [liFreshness, setLiFreshness] = useState<"24h" | "48h" | "7d">("24h");
+  const [liShowOlderJobs, setLiShowOlderJobs] = useState(false);
   const [liResults, setLiResults] = useState<LinkedInJobResult[]>([]);
   const [liError, setLiError] = useState<string | null>(null);
   const [selectedJobIndices, setSelectedJobIndices] = useState<Set<number>>(new Set());
+  const [liFreshnessSummary, setLiFreshnessSummary] = useState<{
+    count24h: number; count48h: number; count7d: number; countOld: number;
+    freshnessUsed: string; fallbackTriggered: boolean;
+  } | null>(null);
   const [liImportSummary, setLiImportSummary] = useState<{
     imported: number; duplicates: number; failed: number; repaired: number;
     insufficient: number; junk: number; missingIds: number; rawCount: number;
@@ -200,11 +230,26 @@ export default function JobDiscovery() {
         roles: liRoles,
         location: liLocation,
         apifyToken,
+        freshness: liFreshness,
       }).then((r) => r.json()),
-    onSuccess: (data: { results: LinkedInJobResult[]; count: number; debug?: any }) => {
+    onSuccess: (data: { results: LinkedInJobResult[]; count: number; freshnessUsed?: string; fallbackTriggered?: boolean; debug?: any }) => {
       const results = data.results ?? [];
       setLiResults(results);
       setLiSearchCount(results.length);
+      setLiShowOlderJobs(false);
+      setLiImportSummary(null);
+
+      // Compute freshness tier counts for the summary bar
+      const count24h = results.filter((j) => getFreshnessTier(j.datePosted) === "24h").length;
+      const count48h = results.filter((j) => getFreshnessTier(j.datePosted) === "48h").length;
+      const count7d  = results.filter((j) => getFreshnessTier(j.datePosted) === "7d").length;
+      const countOld = results.filter((j) => getFreshnessTier(j.datePosted) === "old").length;
+      setLiFreshnessSummary({
+        count24h, count48h, count7d, countOld,
+        freshnessUsed: data.freshnessUsed ?? liFreshness,
+        fallbackTriggered: data.fallbackTriggered ?? false,
+      });
+
       if (data.debug) {
         setLiDebug({
           actorId: data.debug.actorId ?? "",
@@ -224,11 +269,15 @@ export default function JobDiscovery() {
       }
       setLiError(null);
       setSelectedJobIndices(new Set());
-      setLiImportSummary(null);
       if (results.length === 0) {
         toast({ title: "No results", description: "Apify returned 0 jobs. See the debug panel below for actorId, runId, and dataset item count." });
       } else {
-        toast({ title: `${data.count} jobs found`, description: "Results shown below. Select jobs to import into your inbox." });
+        const freshLabel = data.fallbackTriggered
+          ? `${count24h + count48h} fresh jobs (expanded to 48h)`
+          : count24h > 0
+            ? `${count24h} fresh 24h · ${count48h} fresh 48h`
+            : `${count48h} fresh 48h jobs`;
+        toast({ title: `${data.count} jobs found`, description: freshLabel + (count7d > 0 ? ` · ${count7d} older (hidden)` : "") });
       }
     },
     onError: (err: any) => {
@@ -269,10 +318,17 @@ export default function JobDiscovery() {
   const handleImportByPriority = async (limit?: number) => {
     if (liResults.length === 0 || importProgress) return;
 
-    // Rank all results by preview score descending
+    // Rank all results: freshness tier first (24h > 48h > 7d > old), then by fit score.
+    // Only include 7d/old jobs if the user has explicitly enabled "show older jobs".
+    const TIER_ORDER: Record<string, number> = { "24h": 0, "48h": 1, "7d": 2, "old": 3 };
     const ranked = [...liResults]
-      .map((job) => ({ job, score: computePreviewScore(job, liRoles) }))
-      .sort((a, b) => b.score - a.score)
+      .map((job) => ({ job, score: computePreviewScore(job, liRoles), freshTier: getFreshnessTier(job.datePosted) }))
+      .filter(({ freshTier }) => liShowOlderJobs || freshTier === "24h" || freshTier === "48h")
+      .sort((a, b) => {
+        const tierDiff = (TIER_ORDER[a.freshTier] ?? 3) - (TIER_ORDER[b.freshTier] ?? 3);
+        if (tierDiff !== 0) return tierDiff;
+        return b.score - a.score;
+      })
       .map(({ job }) => job);
 
     const toImport = limit ? ranked.slice(0, limit) : ranked;
@@ -917,6 +973,31 @@ export default function JobDiscovery() {
             </div>
           </div>
 
+          {/* Freshness mode selector */}
+          <div className="space-y-1.5">
+            <Label className="text-sm">Freshness Priority</Label>
+            <div className="flex gap-2 flex-wrap">
+              {(["24h", "48h", "7d"] as const).map((f) => (
+                <Button
+                  key={f}
+                  variant={liFreshness === f ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setLiFreshness(f)}
+                  data-testid={`button-freshness-${f}`}
+                >
+                  {f === "24h" ? "Fresh 24h" : f === "48h" ? "Fresh 48h" : "Expand 7 days"}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {liFreshness === "24h"
+                ? "Searches last 24 hours only. Auto-expands to 48h if fewer than 10 results are found."
+                : liFreshness === "48h"
+                ? "Searches last 48 hours for broader fresh job coverage."
+                : "Searches the full past week. Use manually when fresh jobs are scarce."}
+            </p>
+          </div>
+
           <div className="flex items-center gap-3 flex-wrap">
             <Button
               onClick={() => liSearchMutation.mutate()}
@@ -983,11 +1064,58 @@ export default function JobDiscovery() {
                 </Button>
 
                 <span className="text-sm text-muted-foreground" data-testid="li-result-count">
-                  {liResults.length} result{liResults.length !== 1 ? "s" : ""} found
+                  {liResults.filter((j) => liShowOlderJobs || ["24h","48h"].includes(getFreshnessTier(j.datePosted))).length} result{liResults.length !== 1 ? "s" : ""} shown
                 </span>
               </>
             )}
           </div>
+
+          {/* Freshness search summary bar */}
+          {liFreshnessSummary && !liSearchMutation.isPending && (
+            <div className="rounded border bg-muted/30 px-3 py-2 text-sm flex flex-wrap gap-x-4 gap-y-1 items-center" data-testid="freshness-summary">
+              {liFreshnessSummary.fallbackTriggered && (
+                <span className="text-amber-600 dark:text-amber-400 font-medium text-xs">
+                  ⚡ Expanded to 48h (fewer than 10 fresh 24h results found)
+                </span>
+              )}
+              {liFreshnessSummary.count24h > 0 && (
+                <span className="text-green-700 dark:text-green-400 font-medium">
+                  ✓ {liFreshnessSummary.count24h} fresh 24h
+                </span>
+              )}
+              {liFreshnessSummary.count48h > 0 && (
+                <span className="text-blue-700 dark:text-blue-400">
+                  + {liFreshnessSummary.count48h} fresh 48h
+                </span>
+              )}
+              {liFreshnessSummary.count7d > 0 && (
+                <span className="text-amber-700 dark:text-amber-400">
+                  {liFreshnessSummary.count7d} older (this week)
+                </span>
+              )}
+              {liFreshnessSummary.count24h === 0 && liFreshnessSummary.count48h === 0 && (
+                <span className="text-muted-foreground text-xs italic">No fresh jobs found in the selected window</span>
+              )}
+              {(liFreshnessSummary.count7d + liFreshnessSummary.countOld) > 0 && !liShowOlderJobs && (
+                <button
+                  onClick={() => setLiShowOlderJobs(true)}
+                  className="text-xs underline text-muted-foreground hover:text-foreground ml-auto"
+                  data-testid="button-show-older-jobs"
+                >
+                  Show {liFreshnessSummary.count7d + liFreshnessSummary.countOld} older jobs
+                </button>
+              )}
+              {liShowOlderJobs && (liFreshnessSummary.count7d + liFreshnessSummary.countOld) > 0 && (
+                <button
+                  onClick={() => setLiShowOlderJobs(false)}
+                  className="text-xs underline text-muted-foreground hover:text-foreground ml-auto"
+                  data-testid="button-hide-older-jobs"
+                >
+                  Hide older jobs
+                </button>
+              )}
+            </div>
+          )}
 
           {liSearchMutation.isPending && (
             <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
@@ -1132,36 +1260,52 @@ export default function JobDiscovery() {
             </div>
           )}
 
-          {liResults.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left">
-                    <th className="pb-2 pr-2 w-8">
-                      <input
-                        type="checkbox"
-                        checked={liResults.length > 0 && selectedJobIndices.size === liResults.length}
-                        onChange={toggleSelectAll}
-                        data-testid="checkbox-select-all-li"
-                        className="rounded"
-                        title="Select all"
-                      />
-                    </th>
-                    <th className="pb-2 pr-3 font-medium">Priority</th>
-                    <th className="pb-2 pr-3 font-medium">Job Title</th>
-                    <th className="pb-2 pr-3 font-medium">Company</th>
-                    <th className="pb-2 pr-3 font-medium">Location</th>
-                    <th className="pb-2 pr-3 font-medium">Date Posted</th>
-                    <th className="pb-2 pr-3 font-medium">Source</th>
-                    <th className="pb-2 font-medium">Apply Link</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...liResults]
-                    .map((job, origIdx) => ({ job, origIdx, score: computePreviewScore(job, liRoles) }))
-                    .sort((a, b) => b.score - a.score)
-                    .map(({ job, origIdx, score }, rank) => {
+          {liResults.length > 0 && (() => {
+            const TIER_ORD: Record<string, number> = { "24h": 0, "48h": 1, "7d": 2, "old": 3 };
+            const visibleRows = [...liResults]
+              .map((job, origIdx) => ({
+                job, origIdx,
+                score: computePreviewScore(job, liRoles),
+                freshTier: getFreshnessTier(job.datePosted),
+              }))
+              .filter(({ freshTier }) => liShowOlderJobs || freshTier === "24h" || freshTier === "48h")
+              .sort((a, b) => {
+                const td = (TIER_ORD[a.freshTier] ?? 3) - (TIER_ORD[b.freshTier] ?? 3);
+                return td !== 0 ? td : b.score - a.score;
+              });
+            const hiddenCount = liResults.length - visibleRows.length;
+            return (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left">
+                      <th className="pb-2 pr-2 w-8">
+                        <input
+                          type="checkbox"
+                          checked={visibleRows.length > 0 && visibleRows.every(({ origIdx }) => selectedJobIndices.has(origIdx))}
+                          onChange={() => {
+                            const allVisible = new Set(visibleRows.map(({ origIdx }) => origIdx));
+                            const allSelected = visibleRows.every(({ origIdx }) => selectedJobIndices.has(origIdx));
+                            setSelectedJobIndices(allSelected ? new Set() : allVisible);
+                          }}
+                          data-testid="checkbox-select-all-li"
+                          className="rounded"
+                          title="Select all visible"
+                        />
+                      </th>
+                      <th className="pb-2 pr-3 font-medium">Freshness</th>
+                      <th className="pb-2 pr-3 font-medium">Priority</th>
+                      <th className="pb-2 pr-3 font-medium">Job Title</th>
+                      <th className="pb-2 pr-3 font-medium">Company</th>
+                      <th className="pb-2 pr-3 font-medium">Location</th>
+                      <th className="pb-2 pr-3 font-medium">Source</th>
+                      <th className="pb-2 font-medium">Apply Link</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleRows.map(({ job, origIdx, score, freshTier }, rank) => {
                       const tier = getPriorityTier(score);
+                      const fresh = getFreshnessDisplay(freshTier);
                       return (
                         <tr
                           key={origIdx}
@@ -1179,6 +1323,11 @@ export default function JobDiscovery() {
                             />
                           </td>
                           <td className="py-2 pr-3 whitespace-nowrap">
+                            <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${fresh.className}`} data-testid={`li-fresh-${rank}`}>
+                              {fresh.label}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-3 whitespace-nowrap">
                             <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${tier.className}`} data-testid={`li-tier-${rank}`}>
                               {tier.label}
                             </span>
@@ -1188,7 +1337,6 @@ export default function JobDiscovery() {
                           </td>
                           <td className="py-2 pr-3 text-muted-foreground" data-testid={`li-company-${rank}`}>{job.company || "—"}</td>
                           <td className="py-2 pr-3 text-muted-foreground max-w-[150px] truncate" data-testid={`li-location-${rank}`}>{job.location || "—"}</td>
-                          <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap" data-testid={`li-date-${rank}`}>{job.datePosted || "—"}</td>
                           <td className="py-2 pr-3">
                             <Badge variant="outline" className="text-[#0A66C2] border-[#0A66C2]/30">
                               <SiLinkedin className="h-3 w-3 mr-1" />
@@ -1213,10 +1361,25 @@ export default function JobDiscovery() {
                         </tr>
                       );
                     })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                    {hiddenCount > 0 && !liShowOlderJobs && (
+                      <tr>
+                        <td colSpan={8} className="py-3 text-center text-xs text-muted-foreground">
+                          {hiddenCount} older job{hiddenCount !== 1 ? "s" : ""} hidden —{" "}
+                          <button
+                            onClick={() => setLiShowOlderJobs(true)}
+                            className="underline hover:text-foreground"
+                            data-testid="button-show-older-inline"
+                          >
+                            show them
+                          </button>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
         </CardContent>
       </Card>
 
