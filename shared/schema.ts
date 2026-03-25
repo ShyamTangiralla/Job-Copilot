@@ -76,6 +76,9 @@ export const jobs = pgTable("jobs", {
   scanBatchLabel: text("scan_batch_label").notNull().default(""),
   scanDate: text("scan_date").notNull().default(""),
   atsScore: integer("ats_score").notNull().default(0),
+  resumeVersionId: integer("resume_version_id"),
+  atsScoreAtApply: integer("ats_score_at_apply"),
+  resumeGeneratedDate: text("resume_generated_date").notNull().default(""),
 });
 
 export const insertJobSchema = createInsertSchema(jobs).omit({ id: true, createdAt: true });

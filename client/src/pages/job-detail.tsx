@@ -45,13 +45,22 @@ import {
   FileDown,
   Mail,
   RefreshCw,
+  Loader2,
 } from "lucide-react";
 import { exportResumePdf } from "@/lib/export-resume";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Job, CandidateProfile, Resume, ApplicationAnswer } from "@shared/schema";
+import type { Job, CandidateProfile, Resume, ApplicationAnswer, ResumeVersion } from "@shared/schema";
 import { APPLICATION_STATUSES, PRIORITIES } from "@shared/schema";
 import { useState, useEffect, useMemo } from "react";
+import {
+  Dialog as ApplyDialog,
+  DialogContent as ApplyDialogContent,
+  DialogHeader as ApplyDialogHeader,
+  DialogTitle as ApplyDialogTitle,
+  DialogDescription as ApplyDialogDescription,
+  DialogFooter as ApplyDialogFooter,
+} from "@/components/ui/dialog";
 
 interface TailoredResumeRecord {
   id: number;
@@ -645,6 +654,10 @@ export default function JobDetail() {
   const [recruiterName, setRecruiterName] = useState("");
   const [recruiterEmail, setRecruiterEmail] = useState("");
 
+  // Apply dialog state
+  const [applyDialogOpen, setApplyDialogOpen] = useState(false);
+  const [selectedVersionId, setSelectedVersionId] = useState<string>("none");
+
   const { data: job, isLoading } = useQuery<Job>({
     queryKey: ["/api/jobs", params.id],
   });
@@ -659,6 +672,40 @@ export default function JobDetail() {
 
   const { data: answers } = useQuery<ApplicationAnswer[]>({
     queryKey: ["/api/answers"],
+  });
+
+  const jobId = parseInt(params.id);
+  const { data: jobVersions = [] } = useQuery<ResumeVersion[]>({
+    queryKey: ["/api/resume-versions", jobId],
+    queryFn: async () => {
+      const res = await fetch(`/api/resume-versions?jobId=${jobId}`);
+      return res.json();
+    },
+    enabled: !!params.id,
+  });
+
+  const applyMutation = useMutation({
+    mutationFn: async () => {
+      const today = new Date().toISOString().split("T")[0];
+      const versionId = selectedVersionId !== "none" ? parseInt(selectedVersionId) : null;
+      const version = versionId ? jobVersions.find(v => v.id === versionId) : null;
+      const payload: Record<string, any> = {
+        status: "Applied",
+        dateApplied: today,
+        resumeVersionId: versionId ?? undefined,
+        atsScoreAtApply: version?.atsScoreAfter ?? undefined,
+        resumeGeneratedDate: version ? new Date(version.createdAt).toISOString().split("T")[0] : "",
+      };
+      const res = await apiRequest("PATCH", `/api/jobs/${params.id}`, payload);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", params.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      setApplyDialogOpen(false);
+      toast({ title: "Marked as Applied!", description: selectedVersionId !== "none" ? "Resume version recorded." : "No version linked." });
+    },
+    onError: (e: any) => toast({ title: "Failed to apply", description: e.message, variant: "destructive" }),
   });
 
   useEffect(() => {
@@ -786,15 +833,42 @@ export default function JobDetail() {
             <Badge variant="secondary" className="text-xs">{job.workMode}</Badge>
           </div>
         </div>
-        {job.applyLink && (
-          <Button
-            onClick={() => window.open(job.applyLink, "_blank")}
-            data-testid="button-open-apply-link"
-          >
-            <ExternalLink className="h-4 w-4 mr-1" />
-            Open Apply Link
-          </Button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {job.applyLink && (
+            <Button
+              variant={job.status === "Applied" ? "outline" : "default"}
+              onClick={() => window.open(job.applyLink, "_blank")}
+              data-testid="button-open-apply-link"
+            >
+              <ExternalLink className="h-4 w-4 mr-1" />
+              Open Apply Link
+            </Button>
+          )}
+          {job.status !== "Applied" ? (
+            <Button
+              variant="default"
+              onClick={() => setApplyDialogOpen(true)}
+              data-testid="button-mark-applied"
+            >
+              <CheckCircle2 className="h-4 w-4 mr-1" />
+              Mark as Applied
+            </Button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Badge variant="default" className="bg-emerald-600 text-white" data-testid="badge-applied-status">
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                Applied
+              </Badge>
+              {job.resumeVersionId && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <History className="h-3 w-3" />
+                  Version used: <strong>{jobVersions.find(v => v.id === job.resumeVersionId)?.versionLabel ?? `#${job.resumeVersionId}`}</strong>
+                  {job.atsScoreAtApply ? <span className="ml-1 text-emerald-600 font-medium">({job.atsScoreAtApply}% ATS)</span> : null}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
@@ -1112,6 +1186,93 @@ export default function JobDetail() {
           )}
         </div>
       </div>
+
+      {/* ─── Apply Dialog ──────────────────────────────────────────────────────── */}
+      <ApplyDialog open={applyDialogOpen} onOpenChange={setApplyDialogOpen}>
+        <ApplyDialogContent className="max-w-md">
+          <ApplyDialogHeader>
+            <ApplyDialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+              Mark as Applied
+            </ApplyDialogTitle>
+            <ApplyDialogDescription>
+              Recording your application to <strong>{job?.title}</strong> at <strong>{job?.company}</strong>.
+              Optionally link the resume version you used.
+            </ApplyDialogDescription>
+          </ApplyDialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Resume Version Used</Label>
+              {jobVersions.length === 0 ? (
+                <div className="rounded-md border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground">
+                  No saved versions for this job yet.{" "}
+                  <a href={`/jobs/${params.id}/optimize`} className="text-primary underline">
+                    Run optimization
+                  </a>{" "}
+                  to create one.
+                </div>
+              ) : (
+                <Select value={selectedVersionId} onValueChange={setSelectedVersionId}>
+                  <SelectTrigger data-testid="select-apply-version">
+                    <SelectValue placeholder="Select a resume version (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None — don't link a version</SelectItem>
+                    {jobVersions.map(v => (
+                      <SelectItem key={v.id} value={String(v.id)} data-testid={`option-version-${v.id}`}>
+                        {v.versionLabel} · ATS {v.atsScoreAfter}% · {new Date(v.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            {selectedVersionId !== "none" && (() => {
+              const v = jobVersions.find(ver => ver.id === parseInt(selectedVersionId));
+              if (!v) return null;
+              return (
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">ATS Score (before → after)</span>
+                    <span className="font-medium">{v.atsScoreBefore}% → <span className="text-emerald-600">{v.atsScoreAfter}%</span></span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Generated</span>
+                    <span>{new Date(v.createdAt).toLocaleDateString()}</span>
+                  </div>
+                  {v.candidateName && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Candidate</span>
+                      <span>{v.candidateName}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            <p className="text-xs text-muted-foreground">
+              This will set the status to <strong>Applied</strong> and record today's date as the application date.
+            </p>
+          </div>
+
+          <ApplyDialogFooter>
+            <Button variant="outline" onClick={() => setApplyDialogOpen(false)} data-testid="button-apply-cancel">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => applyMutation.mutate()}
+              disabled={applyMutation.isPending}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              data-testid="button-apply-confirm"
+            >
+              {applyMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+              Confirm Applied
+            </Button>
+          </ApplyDialogFooter>
+        </ApplyDialogContent>
+      </ApplyDialog>
     </div>
   );
 }

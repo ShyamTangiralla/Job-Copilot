@@ -31,10 +31,14 @@ import {
   Bell,
   CheckCheck,
   Calendar,
+  History,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Job } from "@shared/schema";
+import type { Job, ResumeVersion } from "@shared/schema";
 import { JOB_STATUSES } from "@shared/schema";
 
 const KANBAN_COLUMNS = ["New", "Reviewed", "Ready to Apply", "Saved", "Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response", "Skipped"] as const;
@@ -66,6 +70,10 @@ export default function Tracker() {
 
   const { data: jobs, isLoading } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
+  });
+
+  const { data: allVersions = [] } = useQuery<ResumeVersion[]>({
+    queryKey: ["/api/resume-versions"],
   });
 
   const updateJob = useMutation({
@@ -280,6 +288,10 @@ export default function Tracker() {
             <List className="h-4 w-4 mr-1" />
             Table
           </TabsTrigger>
+          <TabsTrigger value="applications" data-testid="tab-applications">
+            <History className="h-4 w-4 mr-1" />
+            Applications
+          </TabsTrigger>
           <TabsTrigger value="analytics" data-testid="tab-analytics">
             <BarChart3 className="h-4 w-4 mr-1" />
             Analytics
@@ -428,6 +440,185 @@ export default function Tracker() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ─── Applications Tab ─────────────────────────────────────────────────── */}
+        <TabsContent value="applications" className="mt-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <History className="h-4 w-4 text-primary" />
+                  Application History
+                </CardTitle>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>{(jobs ?? []).filter(j => j.status === "Applied" || j.status === "Interview" || j.status === "Final Round" || j.status === "Offer" || j.status === "Rejected" || j.status === "No Response").length} submitted</span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Track which resume version was used for each application and its ATS score.
+              </p>
+            </CardHeader>
+            <CardContent className="p-0">
+              {isLoading ? (
+                <div className="p-4 space-y-3">
+                  {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                </div>
+              ) : (() => {
+                const appliedJobs = (jobs ?? []).filter(j =>
+                  ["Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response"].includes(j.status)
+                ).sort((a, b) => (b.dateApplied || "").localeCompare(a.dateApplied || ""));
+
+                if (appliedJobs.length === 0) {
+                  return (
+                    <div className="p-12 text-center">
+                      <History className="h-10 w-10 mx-auto text-muted-foreground/40 mb-3" />
+                      <p className="text-sm font-medium text-muted-foreground">No applications submitted yet</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Click "Mark as Applied" on a job to record your application here.
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="min-w-[160px]">Job Title</TableHead>
+                          <TableHead>Company</TableHead>
+                          <TableHead>Resume Version</TableHead>
+                          <TableHead>ATS Score</TableHead>
+                          <TableHead>Applied Date</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Interview</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {appliedJobs.map(job => {
+                          const version = job.resumeVersionId
+                            ? allVersions.find(v => v.id === job.resumeVersionId)
+                            : null;
+                          const atsScore = job.atsScoreAtApply;
+                          const isInterview = job.status === "Interview" || job.status === "Final Round";
+                          const statusColors: Record<string, string> = {
+                            Applied: "bg-emerald-100 text-emerald-800",
+                            Interview: "bg-cyan-100 text-cyan-800",
+                            "Final Round": "bg-indigo-100 text-indigo-800",
+                            Offer: "bg-yellow-100 text-yellow-800",
+                            Rejected: "bg-red-100 text-red-800",
+                            "No Response": "bg-orange-100 text-orange-800",
+                          };
+
+                          return (
+                            <TableRow
+                              key={job.id}
+                              className="cursor-pointer hover:bg-muted/30"
+                              onClick={() => navigate(`/jobs/${job.id}`)}
+                              data-testid={`row-application-${job.id}`}
+                            >
+                              <TableCell className="font-medium">{job.title}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground">{job.company}</TableCell>
+                              <TableCell>
+                                {version ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <Badge variant="secondary" className="font-mono text-xs" data-testid={`badge-version-${job.id}`}>
+                                      {version.versionLabel}
+                                    </Badge>
+                                    <span className="text-xs text-muted-foreground truncate max-w-[80px]">
+                                      {new Date(version.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground italic">No version linked</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {atsScore != null && atsScore > 0 ? (
+                                  <span
+                                    className={`text-sm font-semibold ${atsScore >= 80 ? "text-green-600" : atsScore >= 60 ? "text-yellow-600" : "text-red-500"}`}
+                                    data-testid={`text-ats-${job.id}`}
+                                  >
+                                    {atsScore}%
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground" data-testid={`text-applied-date-${job.id}`}>
+                                {job.dateApplied || "—"}
+                              </TableCell>
+                              <TableCell>
+                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[job.status] ?? "bg-gray-100 text-gray-700"}`} data-testid={`badge-status-${job.id}`}>
+                                  {job.status}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                {isInterview ? (
+                                  <div className="flex items-center gap-1 text-cyan-600">
+                                    <MessageSquare className="h-3.5 w-3.5" />
+                                    <span className="text-xs font-medium">{job.interviewDate || "Scheduled"}</span>
+                                  </div>
+                                ) : job.status === "Offer" ? (
+                                  <div className="flex items-center gap-1 text-yellow-600">
+                                    <Trophy className="h-3.5 w-3.5" />
+                                    <span className="text-xs font-medium">Offer!</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
+
+          {/* Resume version performance analysis */}
+          {allVersions.length > 0 && (jobs ?? []).some(j => j.resumeVersionId) && (
+            <Card className="mt-4">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-medium">Resume Version Performance</CardTitle>
+                <p className="text-xs text-muted-foreground">Which resume versions led to interviews or offers.</p>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {allVersions
+                    .filter(v => (jobs ?? []).some(j => j.resumeVersionId === v.id))
+                    .map(v => {
+                      const linkedJobs = (jobs ?? []).filter(j => j.resumeVersionId === v.id);
+                      const interviews = linkedJobs.filter(j => ["Interview", "Final Round", "Offer"].includes(j.status)).length;
+                      const applied = linkedJobs.length;
+                      const rate = applied > 0 ? Math.round((interviews / applied) * 100) : 0;
+                      return (
+                        <div key={v.id} className="flex items-center gap-3 p-2 rounded-md border" data-testid={`row-version-perf-${v.id}`}>
+                          <Badge variant="secondary" className="font-mono text-xs shrink-0">{v.versionLabel}</Badge>
+                          <span className="text-xs text-muted-foreground truncate flex-1">
+                            {v.jobTitle} @ {v.company}
+                          </span>
+                          <div className="flex items-center gap-3 text-xs shrink-0">
+                            <span className="text-muted-foreground">{applied} applied</span>
+                            <span className={`font-medium ${interviews > 0 ? "text-cyan-600" : "text-muted-foreground"}`}>
+                              {interviews > 0 ? <MessageSquare className="h-3 w-3 inline mr-0.5" /> : null}
+                              {interviews} interview{interviews !== 1 ? "s" : ""}
+                            </span>
+                            <span className={`font-semibold ${rate >= 50 ? "text-green-600" : rate > 0 ? "text-yellow-600" : "text-muted-foreground"}`}>
+                              {rate}% rate
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="analytics" className="mt-4">
