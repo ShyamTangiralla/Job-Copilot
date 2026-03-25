@@ -79,33 +79,61 @@ export function extractLinkedInJobId(url: string): string {
 // ---------------------------------------------------------------------------
 
 function parseLinkedInPageTitle(raw: string): { cleanTitle: string; cleanCompany: string } {
-  const s = raw.replace(/\[\d+\]/g, "").trim(); // strip "[208392]" job-ID suffixes
+  // Strip "[208392]"-style job-ID suffixes
+  let s = raw.replace(/\[\d+\]/g, "").trim();
 
-  // Pattern: "COMPANY hiring TITLE in LOCATION | LinkedIn"
-  const hiringMatch = s.match(/^(.+?)\s+hiring\s+(.+?)\s+in\s+.+?\s*\|/i);
-  if (hiringMatch) {
-    return { cleanTitle: hiringMatch[2].trim(), cleanCompany: hiringMatch[1].trim() };
+  // Guard: login/sign-in/portal pages are not real job listings — return empty
+  // so callers know not to use this page title as a job title.
+  if (/sign[\s-]*in|log[\s-]*in|login|create\s+account|join\s+linkedin|careers\s+portal/i.test(s)) {
+    return { cleanTitle: "", cleanCompany: "" };
   }
 
-  // Pattern: "TITLE at COMPANY | LinkedIn"
-  const atMatch = s.match(/^(.+?)\s+at\s+(.+?)\s*\|/i);
+  // Remove trailing "| LinkedIn" for cleaner downstream matching
+  const stripped = s.replace(/\s*\|\s*LinkedIn\s*$/i, "").trim();
+
+  // Pattern 1: "Company hiring Title | Mode in Location"
+  //   e.g. "Crossing Hurdles hiring Data Analyst | Remote in United States"
+  const hiringMode = stripped.match(/^(.+?)\s+hiring\s+(.+?)\s*\|\s*\w[\w\s-]*\s+in\s+/i);
+  if (hiringMode) {
+    return { cleanTitle: hiringMode[2].trim(), cleanCompany: hiringMode[1].trim() };
+  }
+
+  // Pattern 2: "Company hiring Title in Location"
+  //   e.g. "Aquent hiring Data Analyst in United States"
+  const hiringSimple = stripped.match(/^(.+?)\s+hiring\s+(.+?)\s+in\s+\S/i);
+  if (hiringSimple) {
+    return { cleanTitle: hiringSimple[2].trim(), cleanCompany: hiringSimple[1].trim() };
+  }
+
+  // Pattern 3: "Company hiring Title" (no location)
+  //   e.g. "Stripe hiring Data Analyst"
+  const hiringNoLoc = stripped.match(/^(.+?)\s+hiring\s+(.+?)$/i);
+  if (hiringNoLoc) {
+    return { cleanTitle: hiringNoLoc[2].trim(), cleanCompany: hiringNoLoc[1].trim() };
+  }
+
+  // Pattern 4: "Title at Company"
+  //   e.g. "Data Analyst at Stripe"
+  const atMatch = stripped.match(/^(.+?)\s+at\s+(.+?)$/i);
   if (atMatch) {
     return { cleanTitle: atMatch[1].trim(), cleanCompany: atMatch[2].trim() };
   }
 
-  // Pattern: "TITLE | COMPANY | LinkedIn"
-  const doublePipe = s.match(/^(.+?)\s*\|\s*(.+?)\s*\|\s*LinkedIn/i);
-  if (doublePipe) {
-    return { cleanTitle: doublePipe[1].trim(), cleanCompany: doublePipe[2].trim() };
+  // Pattern 5: "Title | Company"
+  //   e.g. "Data Analyst | Stripe"
+  const pipeMatch = stripped.match(/^(.+?)\s*\|\s*(.+?)$/);
+  if (pipeMatch) {
+    const part1 = pipeMatch[1].trim();
+    const part2 = pipeMatch[2].trim();
+    // If second segment looks like a work-mode qualifier (not a company name), keep only title
+    if (/^(?:remote|hybrid|onsite|on-site|contract|full[\s-]time|part[\s-]time)\b/i.test(part2)) {
+      return { cleanTitle: part1, cleanCompany: "" };
+    }
+    return { cleanTitle: part1, cleanCompany: part2 };
   }
 
-  // Pattern: "TITLE | LinkedIn"
-  const singlePipe = s.match(/^(.+?)\s*\|/);
-  if (singlePipe) {
-    return { cleanTitle: singlePipe[1].trim(), cleanCompany: "" };
-  }
-
-  return { cleanTitle: s, cleanCompany: "" };
+  // Fallback: whole stripped string becomes title
+  return { cleanTitle: stripped, cleanCompany: "" };
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +200,11 @@ function parseRawJob(raw: Record<string, any>): LinkedInJobResult {
     "jobName",
     "name",
   );
-  const title = titleFromFields || parsedFromTitle.cleanTitle || rawPageTitle || "";
+  // Do NOT fall back to rawPageTitle itself — it may be a login page, portal
+  // page, or un-parseable LinkedIn page title.  If parsedFromTitle.cleanTitle
+  // is empty it means the page title was blocked (login) or unrecognised; in
+  // that case we want the title to be "" so the caller can skip or flag the row.
+  const title = titleFromFields || parsedFromTitle.cleanTitle || "";
 
   // ── Company ────────────────────────────────────────────────────────────
   const companyFromFields = pickStr(raw,

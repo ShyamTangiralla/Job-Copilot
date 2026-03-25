@@ -119,7 +119,7 @@ export default function JobDiscovery() {
   const [liResults, setLiResults] = useState<LinkedInJobResult[]>([]);
   const [liError, setLiError] = useState<string | null>(null);
   const [selectedJobIndices, setSelectedJobIndices] = useState<Set<number>>(new Set());
-  const [liImportSummary, setLiImportSummary] = useState<{ imported: number; duplicates: number; failed: number; missingIds: number; rawCount: number; scanBatchLabel?: string } | null>(null);
+  const [liImportSummary, setLiImportSummary] = useState<{ imported: number; duplicates: number; failed: number; repaired: number; insufficient: number; missingIds: number; rawCount: number; scanBatchLabel?: string } | null>(null);
   const [liSearchCount, setLiSearchCount] = useState<number>(0);
   const [liDebug, setLiDebug] = useState<{
     actorId: string;
@@ -177,22 +177,28 @@ export default function JobDiscovery() {
   const liImportMutation = useMutation({
     mutationFn: (jobs: LinkedInJobResult[]) =>
       apiRequest("POST", "/api/import-linkedin-jobs", { jobs }).then((r) => r.json()),
-    onSuccess: (data: { imported: number; duplicates: number; failed: number; missingIds: number; rawCount: number; scanBatchLabel: string }) => {
+    onSuccess: (data: { imported: number; duplicates: number; failed: number; repaired: number; insufficient: number; missingIds: number; rawCount: number; scanBatchLabel: string }) => {
       setLiImportSummary(data);
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       const parts: string[] = [];
-      if (data.imported > 0) parts.push(`${data.imported} new jobs added`);
-      if (data.duplicates > 0) parts.push(`${data.duplicates} already in inbox`);
-      if (data.failed > 0) parts.push(`${data.failed} failed`);
-      if (data.missingIds > 0) parts.push(`${data.missingIds} missing ID`);
+      if (data.imported > 0)     parts.push(`${data.imported} new`);
+      if (data.repaired > 0)     parts.push(`${data.repaired} repaired`);
+      if (data.duplicates > 0)   parts.push(`${data.duplicates} already in inbox`);
+      if (data.failed > 0)       parts.push(`${data.failed} failed`);
+      if (data.insufficient > 0) parts.push(`${data.insufficient} skipped (no data)`);
 
-      const allDupes = data.imported === 0 && data.duplicates > 0 && data.rawCount > 0;
+      const nothingNew = data.imported === 0 && data.repaired === 0;
+      const allDupes   = nothingNew && data.duplicates > 0 && data.rawCount > 0;
       toast({
-        title: data.imported > 0 ? "Import Complete" : allDupes ? "All Jobs Already in Inbox" : "Nothing Imported",
+        title: data.imported > 0 || data.repaired > 0
+          ? "Import Complete"
+          : allDupes
+            ? "All Jobs Already in Inbox"
+            : "Nothing Imported",
         description: allDupes
           ? `All ${data.rawCount} jobs from this scan were already imported in a previous run.`
-          : parts.join(" · ") + (data.imported > 0 ? " — check Jobs Inbox." : ""),
-        variant: data.imported > 0 ? "default" : "destructive",
+          : parts.join(" · ") + ((data.imported > 0 || data.repaired > 0) ? " — check Jobs Inbox." : ""),
+        variant: (data.imported > 0 || data.repaired > 0) ? "default" : "destructive",
       });
     },
     onError: (err: any) => {
@@ -874,11 +880,17 @@ export default function JobDiscovery() {
                   <span className="font-medium">Last import:</span>
                   <span className="text-muted-foreground">Apify returned {liImportSummary.rawCount}</span>
                   <span className="text-green-600 font-medium">✓ {liImportSummary.imported} new</span>
+                  {(liImportSummary.repaired ?? 0) > 0 && (
+                    <span className="text-blue-600 font-medium">⟳ {liImportSummary.repaired} repaired</span>
+                  )}
                   {liImportSummary.duplicates > 0 && (
                     <span className="text-yellow-600">⟳ {liImportSummary.duplicates} already in inbox</span>
                   )}
                   {liImportSummary.failed > 0 && (
                     <span className="text-destructive">✕ {liImportSummary.failed} failed</span>
+                  )}
+                  {(liImportSummary.insufficient ?? 0) > 0 && (
+                    <span className="text-muted-foreground">⊘ {liImportSummary.insufficient} empty records</span>
                   )}
                   {liImportSummary.missingIds > 0 && (
                     <span className="text-muted-foreground">⚠ {liImportSummary.missingIds} no ID</span>
@@ -888,7 +900,7 @@ export default function JobDiscovery() {
                   <div className="text-xs text-muted-foreground mt-1">{liImportSummary.scanBatchLabel}</div>
                 )}
               </div>
-              {liImportSummary.imported === 0 && liImportSummary.duplicates > 0 && liImportSummary.rawCount > 0 && (
+              {liImportSummary.imported === 0 && (liImportSummary.repaired ?? 0) === 0 && liImportSummary.duplicates > 0 && liImportSummary.rawCount > 0 && (
                 <div className="rounded border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30 px-3 py-2 text-sm text-amber-800 dark:text-amber-300" data-testid="li-filtered-out-warning">
                   All {liImportSummary.rawCount} jobs from this scan were already imported in a previous run. Run a new search to find newer postings.
                 </div>
