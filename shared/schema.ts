@@ -53,6 +53,7 @@ export const jobs = pgTable("jobs", {
   datePosted: text("date_posted").notNull().default(""),
   description: text("description").notNull().default(""),
   applyLink: text("apply_link").notNull().default(""),
+  dedupeKey: text("dedupe_key").notNull().default(""),
   roleClassification: text("role_classification").notNull().default("Unknown"),
   resumeRecommendation: text("resume_recommendation").notNull().default(""),
   fitLabel: text("fit_label").notNull().default(""),

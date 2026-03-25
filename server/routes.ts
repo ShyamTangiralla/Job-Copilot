@@ -1418,22 +1418,23 @@ export async function registerRoutes(
       let imported = 0;
       let duplicates = 0;
       let failed = 0;
+      let missingIds = 0;
       let debugLogged = false;
-      const importedJobs: { id: number; title: string; company: string }[] = [];
+      const importedJobs: { id: number; title: string; company: string; dedupeKey: string }[] = [];
       const duplicateDetails: { title: string; company: string; reason: string }[] = [];
       const failedDetails: { title: string; company: string; error: string }[] = [];
 
       // Helper: try a list of field name candidates, return first non-empty trimmed value
-      function pickField(obj: Record<string, any>, ...keys: string[]): string {
-        for (const k of keys) {
-          const v = obj[k];
-          if (v !== null && v !== undefined) {
-            const s = String(v).trim();
+      const pickField = (obj: Record<string, any>, ...keys: string[]): string => {
+        for (const key of keys) {
+          const val = obj[key];
+          if (val !== null && val !== undefined) {
+            const s = String(val).trim();
             if (s) return s;
           }
         }
         return "";
-      }
+      };
 
       for (const raw of jobs) {
         // ── Normalize fields ───────────────────────────────────────────────
@@ -1500,17 +1501,57 @@ export async function registerRoutes(
             "publishedAt",     // cheap_scraper actor (ISO 8601)
             "postedAt",
             "date",
-            "postedTime",      // human-readable — freshnessLabel computation handles it
+            "postedTime",
             "timeAgo",
             "posted",
+            "createdAt",
           );
+
+        // ── jobUrl (LinkedIn posting URL — used for dedup fallback) ───────
+        const jobUrl: string =
+          pickField(raw,
+            "jobUrl",          // parseRawJob output + cheap_scraper actor field
+            "linkedinUrl",
+            "url",
+            "link",
+            "jobLink",
+          );
+
+        // ── dedupeKey: prefer the pre-computed value from parseRawJob, ────
+        // otherwise compute it here using the same three-tier logic.
+        const rawDedupeKey = pickField(raw, "dedupeKey");
+        let dedupeKey = rawDedupeKey;
+        if (!dedupeKey) {
+          // Extract LinkedIn job ID from jobUrl or applyLink
+          const liIdFromJobUrl  = jobUrl.match(/linkedin\.com\/jobs\/view\/(\d+)/i)?.[1] ?? "";
+          const liIdFromApply   = applyLink.match(/linkedin\.com\/jobs\/view\/(\d+)/i)?.[1] ?? "";
+          const liJobId = liIdFromJobUrl || liIdFromApply;
+          if (liJobId) {
+            dedupeKey = `li:${liJobId}`;
+          } else if (applyLink || jobUrl) {
+            const canonicalUrl = applyLink || jobUrl;
+            try {
+              const parsed2 = new URL(canonicalUrl);
+              parsed2.hash = "";
+              ["utm_source","utm_medium","utm_campaign","trk","trkCampaign"].forEach(p => parsed2.searchParams.delete(p));
+              const pathname = parsed2.pathname.replace(/\/+$/, "") || "/";
+              const search = Array.from(parsed2.searchParams.entries()).sort().map(([k2,v2]) => `${k2}=${v2}`).join("&");
+              dedupeKey = `url:${parsed2.hostname.toLowerCase()}${pathname}${search ? "?" + search : ""}`;
+            } catch {
+              dedupeKey = `url:${canonicalUrl.toLowerCase().trim().replace(/\/+$/, "")}`;
+            }
+          } else if (title && company) {
+            dedupeKey = `fp:${title.toLowerCase().trim()}|${company.toLowerCase().trim()}|${datePosted}`;
+          }
+        }
+
+        // ── Flag jobs with no unique identifier ───────────────────────────
+        if (!dedupeKey && !applyLink && !jobUrl) missingIds++;
 
         // ── Enrichment: freshness ──────────────────────────────────────────
         const freshnessLabel = liComputeFreshness(datePosted);
 
         // ── Enrichment: work mode ──────────────────────────────────────────
-        // Pass the inferred value (may be ""), never undefined — that would
-        // trigger the DB column default of "Remote" which would be misleading.
         const workMode = liInferWorkMode(location, description, title);
 
         // ── Debug log first job ────────────────────────────────────────────
@@ -1528,14 +1569,16 @@ export async function registerRoutes(
           console.log(`[LinkedIn Import]   company        = ${JSON.stringify(company)}`);
           console.log(`[LinkedIn Import]   location       = ${JSON.stringify(location)}`);
           console.log(`[LinkedIn Import]   applyLink      = ${JSON.stringify(applyLink)}`);
+          console.log(`[LinkedIn Import]   jobUrl         = ${JSON.stringify(jobUrl)}`);
           console.log(`[LinkedIn Import]   datePosted     = ${JSON.stringify(datePosted)}`);
+          console.log(`[LinkedIn Import]   dedupeKey      = ${JSON.stringify(dedupeKey)}`);
           console.log(`[LinkedIn Import]   freshnessLabel = ${JSON.stringify(freshnessLabel)}`);
           console.log(`[LinkedIn Import]   workMode       = ${JSON.stringify(workMode)}`);
           debugLogged = true;
         }
 
         try {
-          const dupCheck = await storage.checkDuplicate(title, company, applyLink, datePosted || undefined);
+          const dupCheck = await storage.checkDuplicate(title, company, applyLink, datePosted || undefined, dedupeKey || undefined);
           if (dupCheck.isDuplicate) {
             duplicates++;
             duplicateDetails.push({ title, company, reason: dupCheck.reason ?? "duplicate" });
@@ -1545,14 +1588,14 @@ export async function registerRoutes(
           // createJob calls classifyAndScore internally which handles:
           // roleClassification, fitLabel, resumeRecommendation,
           // applyPriorityScore, applyPriorityLabel, applyPriorityExplanation
-          // freshnessLabel is passed in so scoring uses the correct tier.
           const job = await storage.createJob({
-            title,
-            company,
+            title: title || "Untitled Position",
+            company: company || "Unknown Company",
             source: "LinkedIn",
             location,
             description,
             applyLink,
+            dedupeKey,
             datePosted: datePosted || undefined,
             freshnessLabel,
             workMode,
@@ -1564,16 +1607,30 @@ export async function registerRoutes(
           });
 
           imported++;
-          importedJobs.push({ id: job.id, title: job.title, company: job.company });
+          importedJobs.push({ id: job.id, title: job.title, company: job.company, dedupeKey: job.dedupeKey });
+
+          // Log the final saved job (first time only)
+          if (imported === 1) {
+            console.log(`[LinkedIn Import] ── Debug: first saved job ──`);
+            console.log(`[LinkedIn Import]   id             = ${job.id}`);
+            console.log(`[LinkedIn Import]   title          = ${JSON.stringify(job.title)}`);
+            console.log(`[LinkedIn Import]   company        = ${JSON.stringify(job.company)}`);
+            console.log(`[LinkedIn Import]   location       = ${JSON.stringify(job.location)}`);
+            console.log(`[LinkedIn Import]   applyLink      = ${JSON.stringify(job.applyLink)}`);
+            console.log(`[LinkedIn Import]   dedupeKey      = ${JSON.stringify(job.dedupeKey)}`);
+            console.log(`[LinkedIn Import]   datePosted     = ${JSON.stringify(job.datePosted)}`);
+            console.log(`[LinkedIn Import]   freshnessLabel = ${JSON.stringify(job.freshnessLabel)}`);
+            console.log(`[LinkedIn Import]   fitLabel       = ${JSON.stringify(job.fitLabel)}`);
+          }
         } catch (err: any) {
           failed++;
           failedDetails.push({ title, company, error: err?.message ?? "Unknown error" });
         }
       }
 
-      console.log(`[LinkedIn Import] ── Import complete: ${imported} inserted, ${duplicates} duplicates, ${failed} failed (of ${jobs.length} total) ──`);
+      console.log(`[LinkedIn Import] ── Summary: ${imported} inserted, ${duplicates} duplicates, ${failed} failed, ${missingIds} missing-IDs (of ${jobs.length} total) ──`);
       if (imported === 0 && jobs.length > 0) {
-        console.log(`[LinkedIn Import] WARNING: ${jobs.length} jobs received but 0 inserted — likely all duplicates.`);
+        console.log(`[LinkedIn Import] WARNING: ${jobs.length} jobs received but 0 inserted.`);
         duplicateDetails.slice(0, 5).forEach((d) => console.log(`  Duplicate: "${d.title}" @ ${d.company} — ${d.reason}`));
       }
 
@@ -1581,6 +1638,7 @@ export async function registerRoutes(
         imported,
         duplicates,
         failed,
+        missingIds,
         importedJobs,
         duplicateDetails,
         failedDetails,

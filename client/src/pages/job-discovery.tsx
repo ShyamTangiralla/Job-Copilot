@@ -19,9 +19,11 @@ interface LinkedInJobResult {
   company: string;
   location: string;
   applyLink: string;
+  jobUrl: string;
   datePosted: string;
   source: string;
   description: string;
+  dedupeKey: string;
 }
 
 interface DiscoverySettings {
@@ -117,7 +119,7 @@ export default function JobDiscovery() {
   const [liResults, setLiResults] = useState<LinkedInJobResult[]>([]);
   const [liError, setLiError] = useState<string | null>(null);
   const [selectedJobIndices, setSelectedJobIndices] = useState<Set<number>>(new Set());
-  const [liImportSummary, setLiImportSummary] = useState<{ imported: number; duplicates: number; failed: number; rawCount: number } | null>(null);
+  const [liImportSummary, setLiImportSummary] = useState<{ imported: number; duplicates: number; failed: number; missingIds: number; rawCount: number; scanBatchLabel?: string } | null>(null);
   const [liSearchCount, setLiSearchCount] = useState<number>(0);
   const [liDebug, setLiDebug] = useState<{
     actorId: string;
@@ -175,20 +177,21 @@ export default function JobDiscovery() {
   const liImportMutation = useMutation({
     mutationFn: (jobs: LinkedInJobResult[]) =>
       apiRequest("POST", "/api/import-linkedin-jobs", { jobs }).then((r) => r.json()),
-    onSuccess: (data: { imported: number; duplicates: number; failed: number; rawCount: number }) => {
+    onSuccess: (data: { imported: number; duplicates: number; failed: number; missingIds: number; rawCount: number; scanBatchLabel: string }) => {
       setLiImportSummary(data);
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       const parts: string[] = [];
-      if (data.imported > 0) parts.push(`${data.imported} imported`);
-      if (data.duplicates > 0) parts.push(`${data.duplicates} duplicate${data.duplicates !== 1 ? "s" : ""} skipped`);
+      if (data.imported > 0) parts.push(`${data.imported} new jobs added`);
+      if (data.duplicates > 0) parts.push(`${data.duplicates} already in inbox`);
       if (data.failed > 0) parts.push(`${data.failed} failed`);
+      if (data.missingIds > 0) parts.push(`${data.missingIds} missing ID`);
 
-      const allFilteredOut = data.imported === 0 && data.rawCount > 0;
+      const allDupes = data.imported === 0 && data.duplicates > 0 && data.rawCount > 0;
       toast({
-        title: data.imported > 0 ? "Import Complete" : allFilteredOut ? "All Jobs Already Exist" : "Nothing Imported",
-        description: allFilteredOut
-          ? `Apify returned ${data.rawCount} jobs, but all were already in your inbox (duplicates).`
-          : parts.join(", ") + (data.imported > 0 ? ". Check Jobs Inbox." : ""),
+        title: data.imported > 0 ? "Import Complete" : allDupes ? "All Jobs Already in Inbox" : "Nothing Imported",
+        description: allDupes
+          ? `All ${data.rawCount} jobs from this scan were already imported in a previous run.`
+          : parts.join(" · ") + (data.imported > 0 ? " — check Jobs Inbox." : ""),
         variant: data.imported > 0 ? "default" : "destructive",
       });
     },
@@ -865,20 +868,29 @@ export default function JobDiscovery() {
           )}
 
           {liImportSummary && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-4 rounded border bg-muted/50 px-3 py-2 text-sm" data-testid="li-import-summary">
-                <span className="font-medium">Import result:</span>
-                <span className="text-green-600 font-medium">{liImportSummary.imported} imported</span>
-                {liImportSummary.duplicates > 0 && (
-                  <span className="text-yellow-600">{liImportSummary.duplicates} duplicate{liImportSummary.duplicates !== 1 ? "s" : ""} skipped</span>
-                )}
-                {liImportSummary.failed > 0 && (
-                  <span className="text-destructive">{liImportSummary.failed} failed</span>
+            <div className="space-y-2" data-testid="li-import-summary">
+              <div className="rounded border bg-muted/50 px-3 py-2 text-sm">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <span className="font-medium">Last import:</span>
+                  <span className="text-muted-foreground">Apify returned {liImportSummary.rawCount}</span>
+                  <span className="text-green-600 font-medium">✓ {liImportSummary.imported} new</span>
+                  {liImportSummary.duplicates > 0 && (
+                    <span className="text-yellow-600">⟳ {liImportSummary.duplicates} already in inbox</span>
+                  )}
+                  {liImportSummary.failed > 0 && (
+                    <span className="text-destructive">✕ {liImportSummary.failed} failed</span>
+                  )}
+                  {liImportSummary.missingIds > 0 && (
+                    <span className="text-muted-foreground">⚠ {liImportSummary.missingIds} no ID</span>
+                  )}
+                </div>
+                {liImportSummary.scanBatchLabel && (
+                  <div className="text-xs text-muted-foreground mt-1">{liImportSummary.scanBatchLabel}</div>
                 )}
               </div>
-              {liImportSummary.imported === 0 && liImportSummary.rawCount > 0 && (
+              {liImportSummary.imported === 0 && liImportSummary.duplicates > 0 && liImportSummary.rawCount > 0 && (
                 <div className="rounded border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30 px-3 py-2 text-sm text-amber-800 dark:text-amber-300" data-testid="li-filtered-out-warning">
-                  ⚠ Apify returned {liImportSummary.rawCount} job{liImportSummary.rawCount !== 1 ? "s" : ""}, but Job Copilot filtered them out — they already exist in your inbox as duplicates.
+                  All {liImportSummary.rawCount} jobs from this scan were already imported in a previous run. Run a new search to find newer postings.
                 </div>
               )}
             </div>

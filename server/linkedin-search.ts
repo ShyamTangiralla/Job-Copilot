@@ -31,9 +31,11 @@ export interface LinkedInJobResult {
   company: string;
   location: string;
   applyLink: string;
+  jobUrl: string;
   datePosted: string;
   source: string;
   description: string;
+  dedupeKey: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -48,13 +50,62 @@ function normalizeForDedup(url: string): string {
       "fbclid", "gclid", "mc_cid", "mc_eid", "trk", "trkCampaign"].forEach(p =>
       parsed.searchParams.delete(p),
     );
-    const sorted = new URLSearchParams([...parsed.searchParams.entries()].sort());
+    const sorted = new URLSearchParams(Array.from(parsed.searchParams.entries()).sort());
     const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
     const search = sorted.toString() ? `?${sorted.toString()}` : "";
     return `${parsed.hostname.toLowerCase()}${pathname}${search}`.toLowerCase();
   } catch {
     return url.toLowerCase().trim().replace(/\/+$/, "");
   }
+}
+
+// ---------------------------------------------------------------------------
+// LinkedIn job ID extractor — most reliable cross-run dedup key
+// ---------------------------------------------------------------------------
+
+export function extractLinkedInJobId(url: string): string {
+  if (!url) return "";
+  const match = url.match(/linkedin\.com\/jobs\/view\/(\d+)/i);
+  return match ? match[1] : "";
+}
+
+// ---------------------------------------------------------------------------
+// LinkedIn page-title parser
+// Handles patterns like:
+//   "Aquent hiring Data Analyst [208392] in United States | LinkedIn"
+//   "Data Analyst at Aquent | LinkedIn"
+//   "Senior Data Scientist | Stripe | LinkedIn"
+// Returns { cleanTitle, cleanCompany } extracted from the raw page title.
+// ---------------------------------------------------------------------------
+
+function parseLinkedInPageTitle(raw: string): { cleanTitle: string; cleanCompany: string } {
+  const s = raw.replace(/\[\d+\]/g, "").trim(); // strip "[208392]" job-ID suffixes
+
+  // Pattern: "COMPANY hiring TITLE in LOCATION | LinkedIn"
+  const hiringMatch = s.match(/^(.+?)\s+hiring\s+(.+?)\s+in\s+.+?\s*\|/i);
+  if (hiringMatch) {
+    return { cleanTitle: hiringMatch[2].trim(), cleanCompany: hiringMatch[1].trim() };
+  }
+
+  // Pattern: "TITLE at COMPANY | LinkedIn"
+  const atMatch = s.match(/^(.+?)\s+at\s+(.+?)\s*\|/i);
+  if (atMatch) {
+    return { cleanTitle: atMatch[1].trim(), cleanCompany: atMatch[2].trim() };
+  }
+
+  // Pattern: "TITLE | COMPANY | LinkedIn"
+  const doublePipe = s.match(/^(.+?)\s*\|\s*(.+?)\s*\|\s*LinkedIn/i);
+  if (doublePipe) {
+    return { cleanTitle: doublePipe[1].trim(), cleanCompany: doublePipe[2].trim() };
+  }
+
+  // Pattern: "TITLE | LinkedIn"
+  const singlePipe = s.match(/^(.+?)\s*\|/);
+  if (singlePipe) {
+    return { cleanTitle: singlePipe[1].trim(), cleanCompany: "" };
+  }
+
+  return { cleanTitle: s, cleanCompany: "" };
 }
 
 // ---------------------------------------------------------------------------
@@ -89,72 +140,101 @@ function pickStr(raw: Record<string, any>, ...keys: string[]): string {
 }
 
 function parseRawJob(raw: Record<string, any>): LinkedInJobResult {
-  // Title — cheap_scraper actor: jobTitle; fallback chain covers other scrapers
-  const title = pickStr(raw,
-    "jobTitle",           // cheap_scraper primary
-    "positionTitle",      // some other actors
-    "position",           // generic
-    "job_title",
-    "name",               // rare — only used if nothing else matches
-    // NOTE: intentionally skip plain "title" — it often contains the HTML page
-    // title e.g. "Aquent hiring Data Analyst in United States | LinkedIn"
+  // ── URL fields first — needed for title/company fallback extraction ─────
+  // Prefer the direct external apply URL; fall back to the LinkedIn posting URL.
+  const applyUrl = pickStr(raw,
+    "applyUrl",           // cheap_scraper: external apply URL
+    "externalApplyLink",
+    "apply_url",
+    "applyLink",          // pre-parsed (if object was already mapped)
   );
+  const jobUrl = pickStr(raw,
+    "jobUrl",             // cheap_scraper: LinkedIn posting URL
+    "linkedinUrl",
+    "url",
+    "link",
+    "jobLink",
+  );
+  const applyLink = applyUrl || jobUrl;
 
-  // Company — cheap_scraper actor: companyName
-  const company = pickStr(raw,
-    "companyName",        // cheap_scraper primary
+  // ── Raw page title (may contain company+job info even when other fields null) ──
+  const rawPageTitle = pickStr(raw, "title");
+  const parsedFromTitle = rawPageTitle ? parseLinkedInPageTitle(rawPageTitle) : { cleanTitle: "", cleanCompany: "" };
+
+  // ── Job title ──────────────────────────────────────────────────────────
+  // Priority: explicit jobTitle field → other semantic names → parse from page title
+  const titleFromFields = pickStr(raw,
+    "jobTitle",           // cheap_scraper documented output field
+    "positionTitle",
+    "position",
+    "job_title",
+    "role",
+    "jobName",
+    "name",
+  );
+  const title = titleFromFields || parsedFromTitle.cleanTitle || rawPageTitle || "";
+
+  // ── Company ────────────────────────────────────────────────────────────
+  const companyFromFields = pickStr(raw,
+    "companyName",        // cheap_scraper documented output field
     "company",
     "company_name",
     "employer",
     "organization",
     "hiringOrganization",
+    "companyTitle",
   );
+  const company = companyFromFields || parsedFromTitle.cleanCompany || "";
 
-  // Location — cheap_scraper actor: location
+  // ── Location ───────────────────────────────────────────────────────────
   const location = pickStr(raw,
-    "location",           // cheap_scraper primary
+    "location",           // cheap_scraper documented output field
     "jobLocation",
     "city",
     "geoText",
     "locationText",
     "country",
+    "place",
   );
 
-  // Apply link — prefer direct applyUrl, fall back to LinkedIn jobUrl
-  const applyLink = pickStr(raw,
-    "applyUrl",           // cheap_scraper: direct application URL
-    "jobUrl",             // cheap_scraper: LinkedIn posting URL
-    "url",
-    "link",
-    "externalApplyLink",
-    "applyLink",          // pre-parsed field name (if sent already-parsed)
-    "jobLink",
-  );
-
-  // Date — cheap_scraper actor: publishedAt (ISO 8601), postedTime (human)
+  // ── Date ───────────────────────────────────────────────────────────────
   const rawDate = pickStr(raw,
-    "publishedAt",        // ISO 8601 preferred
+    "publishedAt",        // cheap_scraper: ISO 8601
     "postedAt",
     "datePosted",
     "date",
-    "postedTime",         // human-readable "2 days ago" — extractDate handles it
+    "postedTime",         // human-readable "2 days ago"
     "timeAgo",
     "posted",
+    "createdAt",
   );
   const datePosted = extractDate(rawDate);
 
-  // Description — cheap_scraper actor: jobDescription
+  // ── Description ────────────────────────────────────────────────────────
   const description = pickStr(raw,
-    "jobDescription",     // cheap_scraper primary
+    "jobDescription",     // cheap_scraper documented output field
     "description",
     "descriptionText",
     "snippet",
     "summary",
     "details",
     "body",
+    "text",
   );
 
-  return { title, company, location, applyLink, datePosted, source: "LinkedIn", description };
+  // ── dedupeKey: LinkedIn job ID → normalized URL → fingerprint ─────────
+  // LinkedIn job IDs are unique and stable across re-runs — most reliable key.
+  const liJobId = extractLinkedInJobId(jobUrl) || extractLinkedInJobId(applyUrl);
+  let dedupeKey = "";
+  if (liJobId) {
+    dedupeKey = `li:${liJobId}`;
+  } else if (applyLink) {
+    dedupeKey = `url:${normalizeForDedup(applyLink)}`;
+  } else if (title && company) {
+    dedupeKey = `fp:${title.toLowerCase().trim()}|${company.toLowerCase().trim()}|${datePosted}`;
+  }
+
+  return { title, company, location, applyLink, jobUrl, datePosted, source: "LinkedIn", description, dedupeKey };
 }
 
 function extractDate(raw: string): string {
@@ -332,7 +412,9 @@ export async function searchLinkedInJobs(
     console.log(`[Apify]   company     = ${JSON.stringify(parsed.company)}`);
     console.log(`[Apify]   location    = ${JSON.stringify(parsed.location)}`);
     console.log(`[Apify]   applyLink   = ${JSON.stringify(parsed.applyLink)}`);
+    console.log(`[Apify]   jobUrl      = ${JSON.stringify(parsed.jobUrl)}`);
     console.log(`[Apify]   datePosted  = ${JSON.stringify(parsed.datePosted)}`);
+    console.log(`[Apify]   dedupeKey   = ${JSON.stringify(parsed.dedupeKey)}`);
     console.log(`[Apify]   description = (${parsed.description.length} chars)`);
   } else {
     console.log(`[Apify] Dataset is empty — actor returned 0 jobs`);

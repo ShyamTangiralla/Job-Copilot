@@ -77,7 +77,7 @@ export interface IStorage {
   createJob(data: InsertJob): Promise<Job>;
   updateJob(id: number, data: Partial<InsertJob>): Promise<Job | undefined>;
   deleteJob(id: number): Promise<void>;
-  checkDuplicate(title: string, company: string, applyLink: string, datePosted?: string): Promise<{ isDuplicate: boolean; existingJob?: Job; reason?: string }>;
+  checkDuplicate(title: string, company: string, applyLink: string, datePosted?: string, dedupeKey?: string): Promise<{ isDuplicate: boolean; existingJob?: Job; reason?: string }>;
 
   getAnswers(): Promise<ApplicationAnswer[]>;
   createAnswer(data: InsertApplicationAnswer): Promise<ApplicationAnswer>;
@@ -241,9 +241,23 @@ export class DatabaseStorage implements IStorage {
     await db.delete(jobs).where(eq(jobs.id, id));
   }
 
-  async checkDuplicate(title: string, company: string, applyLink: string, datePosted?: string): Promise<{ isDuplicate: boolean; existingJob?: Job; reason?: string }> {
-    // Primary rule: URL-based matching.
-    // A job with an apply link is ONLY a duplicate if the normalized URL matches an existing one.
+  async checkDuplicate(title: string, company: string, applyLink: string, datePosted?: string, dedupeKey?: string): Promise<{ isDuplicate: boolean; existingJob?: Job; reason?: string }> {
+    // ── Rule 1: dedupeKey match (LinkedIn job ID or URL fingerprint) ──────
+    // This is the most reliable cross-run check. LinkedIn job IDs never change.
+    if (dedupeKey) {
+      const rows = await db.select().from(jobs)
+        .where(and(
+          sql`${jobs.dedupeKey} != ''`,
+          sql`${jobs.dedupeKey} = ${dedupeKey}`,
+        ))
+        .limit(1);
+      if (rows.length > 0) {
+        return { isDuplicate: true, existingJob: rows[0], reason: "dedupe_key_match" };
+      }
+    }
+
+    // ── Rule 2: URL-based matching ────────────────────────────────────────
+    // A job with an apply link is ONLY a duplicate if the normalized URL matches.
     // title+company alone is never enough when a URL is present.
     if (applyLink) {
       const rawLink = applyLink.toLowerCase().trim().replace(/\/+$/, "");
@@ -265,13 +279,12 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
-      // URL is present and no match found → not a duplicate regardless of title/company
+      // URL present and no match found → not a duplicate
       return { isDuplicate: false };
     }
 
-    // Secondary rule: no apply link available.
-    // Require title + company + same posting date to call it a duplicate.
-    // Same title+company alone on different dates indicates a new posting.
+    // ── Rule 3: Title + company + date fingerprint ────────────────────────
+    // Only used when no URL is available. Require all three to avoid false positives.
     if (title && company && datePosted) {
       const normalizedTitle = title.toLowerCase().trim();
       const normalizedCompany = company.toLowerCase().trim();
