@@ -2101,24 +2101,102 @@ export async function registerRoutes(
         "Rejected", "No Response",
       ].map(s => ({ status: s, count: allJobs.filter(j => j.status === s).length }));
 
+      // ── Pipeline funnel with conversion rates ─────────────────────────────────
+      const totalOffers = allJobs.filter(j => j.status === "Offer").length;
+      const funnelStages = [
+        { stage: "Scraped", count: totalJobsScraped },
+        { stage: "Imported", count: totalJobsImported },
+        { stage: "Total Jobs", count: allJobs.length },
+        { stage: "Applied", count: totalApplications },
+        { stage: "Interviews", count: totalInterviews },
+        { stage: "Offers", count: totalOffers },
+      ];
+      const pipelineFunnel = funnelStages.map((s, i) => ({
+        ...s,
+        conversionFromPrev: i === 0 ? 100 : funnelStages[i - 1].count > 0
+          ? Math.round((s.count / funnelStages[i - 1].count) * 100)
+          : 0,
+      }));
+
+      // ── Interviews per month (last 12 months) ─────────────────────────────────
+      const monthMap: Record<string, number> = {};
+      for (let m = 11; m >= 0; m--) {
+        const d = new Date();
+        d.setDate(1);
+        d.setMonth(d.getMonth() - m);
+        const key = d.toISOString().slice(0, 7);
+        monthMap[key] = 0;
+      }
+      for (const j of interviews) {
+        const dateStr = j.interviewDate ?? j.dateApplied;
+        if (!dateStr) continue;
+        const key = new Date(dateStr).toISOString().slice(0, 7);
+        if (key in monthMap) monthMap[key]++;
+      }
+      const interviewsPerMonth = Object.entries(monthMap)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([month, count]) => ({ month, count }));
+
+      // ── Work mode breakdown (applied jobs) ────────────────────────────────────
+      const workModeMap: Record<string, number> = {};
+      for (const j of applied) {
+        const mode = (j.workMode || "Unknown").trim();
+        workModeMap[mode] = (workModeMap[mode] ?? 0) + 1;
+      }
+      const workModeBreakdown = Object.entries(workModeMap)
+        .sort((a, b) => b[1] - a[1])
+        .map(([mode, count]) => ({ mode, count }));
+
+      // ── Avg days between applications ─────────────────────────────────────────
+      const appDates = applied
+        .filter(j => j.dateApplied)
+        .map(j => new Date(j.dateApplied!).getTime())
+        .sort((a, b) => a - b);
+      let avgDaysBetweenApplications: number | null = null;
+      if (appDates.length >= 2) {
+        const gaps: number[] = [];
+        for (let i = 1; i < appDates.length; i++) {
+          gaps.push((appDates[i] - appDates[i - 1]) / 86400000);
+        }
+        avgDaysBetweenApplications = Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length);
+      }
+
+      // ── ATS score vs interview rate (by bucket) ───────────────────────────────
+      const atsVsInterviewRate = buckets.map(b => {
+        const inBucket = atsAll.filter(j => j.atsScoreAtApply! >= b.min && j.atsScoreAtApply! <= b.max);
+        const interviewedInBucket = inBucket.filter(j => INTERVIEW_STATUSES.has(j.status));
+        return {
+          range: b.range,
+          applied: inBucket.length,
+          interviews: interviewedInBucket.length,
+          rate: inBucket.length > 0 ? Math.round((interviewedInBucket.length / inBucket.length) * 100) : 0,
+        };
+      });
+
       res.json({
         totalJobsScraped,
         totalJobsImported,
         totalJobs: allJobs.length,
         totalApplications,
         totalInterviews,
+        totalOffers,
         conversionRate,
         avgAtsScoreApplied,
         avgDaysPostedToApplied,
         avgDaysAppliedToInterview,
+        avgDaysBetweenApplications,
         applicationsPerWeek,
+        interviewsPerMonth,
         jobsPerDay,
         atsDistribution,
+        atsVsInterviewRate,
         versionInterviewRate,
         topCompanies,
         topTitles,
+        workModeBreakdown,
         atsImprovements,
         statusFunnel,
+        pipelineFunnel,
         totalVersions: allVersions.length,
         avgAtsBefore: allVersions.length > 0 ? Math.round(allVersions.reduce((a, v) => a + v.atsScoreBefore, 0) / allVersions.length) : 0,
         avgAtsAfter: allVersions.length > 0 ? Math.round(allVersions.reduce((a, v) => a + v.atsScoreAfter, 0) / allVersions.length) : 0,
