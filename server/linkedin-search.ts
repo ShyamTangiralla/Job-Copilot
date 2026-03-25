@@ -147,15 +147,16 @@ function parseLinkedInPageTitle(raw: string): { cleanTitle: string; cleanCompany
 // ---------------------------------------------------------------------------
 
 function buildActorInput(roles: string[], location: string): object {
-  // The actor requires a single search string — not an array.
-  // Multiple roles are joined with a space so LinkedIn treats them as an OR.
-  // We send both "searchKeywords" (actor's UI field name) and "keyword"
-  // (name mentioned in the actor's own error message) to ensure one hits.
-  const searchString = roles.join(" ");
+  // Actor schema (confirmed): "keyword" must be an array of strings.
+  // If the user entered a comma-separated list in one role field, split it
+  // so each term becomes its own array element.
+  const keywordArray = roles
+    .flatMap((r) => r.split(","))
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   return {
-    searchKeywords: searchString,   // actor's input schema field name
-    keyword:        searchString,   // alternate name (actor error message says this)
+    keyword:        keywordArray,
     location:       location || "United States",
     publishedAt:    "r604800",      // past week
     maxItems:       150,            // minimum for pay-per-result billing
