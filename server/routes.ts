@@ -2101,12 +2101,13 @@ export async function registerRoutes(
         "Rejected", "No Response",
       ].map(s => ({ status: s, count: allJobs.filter(j => j.status === s).length }));
 
-      // ── Pipeline funnel with conversion rates ─────────────────────────────────
+      // ── Pipeline funnel (linear, descending) ──────────────────────────────────
       const totalOffers = allJobs.filter(j => j.status === "Offer").length;
+      const totalReviewed = allJobs.filter(j => j.status !== "New").length;
       const funnelStages = [
         { stage: "Scraped", count: totalJobsScraped },
-        { stage: "Imported", count: totalJobsImported },
-        { stage: "Total Jobs", count: allJobs.length },
+        { stage: "Imported", count: allJobs.length },
+        { stage: "Reviewed", count: totalReviewed },
         { stage: "Applied", count: totalApplications },
         { stage: "Interviews", count: totalInterviews },
         { stage: "Offers", count: totalOffers },
@@ -2161,6 +2162,90 @@ export async function registerRoutes(
         avgDaysBetweenApplications = Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length);
       }
 
+      // ── Applications per day (last 30 days) ───────────────────────────────────
+      const appDayMap: Record<string, number> = {};
+      for (let d = 29; d >= 0; d--) {
+        const dt = new Date();
+        dt.setDate(dt.getDate() - d);
+        appDayMap[dt.toISOString().split("T")[0]] = 0;
+      }
+      for (const j of applied) {
+        if (!j.dateApplied) continue;
+        const key = new Date(j.dateApplied).toISOString().split("T")[0];
+        if (key in appDayMap) appDayMap[key]++;
+      }
+      const applicationsPerDay = Object.entries(appDayMap)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([date, count]) => ({ date, count }));
+
+      // ── Applications by role type ─────────────────────────────────────────────
+      const roleTypeMap: Record<string, number> = {};
+      for (const j of applied) {
+        const role = (j.roleClassification || "Other").trim();
+        roleTypeMap[role] = (roleTypeMap[role] ?? 0) + 1;
+      }
+      const applicationsByRoleType = Object.entries(roleTypeMap)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([role, count]) => ({ role, count }));
+
+      // ── Job Market: top titles across ALL jobs ────────────────────────────────
+      const allTitleMap: Record<string, number> = {};
+      for (const j of allJobs) {
+        if (j.title) allTitleMap[j.title.trim()] = (allTitleMap[j.title.trim()] ?? 0) + 1;
+      }
+      const jobMarketTopTitles = Object.entries(allTitleMap)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([title, count]) => ({ title, count }));
+
+      // ── Job Market: top companies hiring across ALL jobs ──────────────────────
+      const allCompanyMap: Record<string, number> = {};
+      for (const j of allJobs) {
+        if (j.company) allCompanyMap[j.company] = (allCompanyMap[j.company] ?? 0) + 1;
+      }
+      const jobMarketTopCompanies = Object.entries(allCompanyMap)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([company, count]) => ({ company, count }));
+
+      // ── Job Market: most common skills in job descriptions ────────────────────
+      const SKILL_KEYWORDS = [
+        "SQL", "Python", "Excel", "Power BI", "Tableau", "R", "Machine Learning",
+        "JavaScript", "TypeScript", "React", "Node.js", "Java", "AWS", "Azure", "GCP",
+        "Databricks", "Snowflake", "dbt", "Spark", "PySpark", "ETL", "A/B Testing",
+        "Pandas", "NumPy", "Scikit-learn", "TensorFlow", "Statistics", "NLP",
+        "Power Query", "DAX", "JIRA", "Agile", "Scrum", "Git", "Docker",
+        "PostgreSQL", "MySQL", "MongoDB", "Kafka", "Airflow", "Looker", "Redshift",
+      ];
+      const skillMap: Record<string, number> = {};
+      for (const j of allJobs) {
+        if (!j.description) continue;
+        const desc = j.description.toLowerCase();
+        for (const skill of SKILL_KEYWORDS) {
+          if (desc.includes(skill.toLowerCase())) {
+            skillMap[skill] = (skillMap[skill] ?? 0) + 1;
+          }
+        }
+      }
+      const jobMarketTopSkills = Object.entries(skillMap)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 20)
+        .map(([skill, count]) => ({ skill, count }));
+
+      // ── Job Market: avg match score per role type ─────────────────────────────
+      const roleScoreMap: Record<string, { total: number; count: number }> = {};
+      for (const j of allJobs) {
+        if (!j.roleClassification || j.applyPriorityScore <= 0) continue;
+        if (!roleScoreMap[j.roleClassification]) roleScoreMap[j.roleClassification] = { total: 0, count: 0 };
+        roleScoreMap[j.roleClassification].total += j.applyPriorityScore;
+        roleScoreMap[j.roleClassification].count++;
+      }
+      const avgMatchScoreByRole = Object.entries(roleScoreMap)
+        .map(([role, { total, count }]) => ({ role, avgScore: Math.round(total / count), count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+
       // ── ATS score vs interview rate (by bucket) ───────────────────────────────
       const atsVsInterviewRate = buckets.map(b => {
         const inBucket = atsAll.filter(j => j.atsScoreAtApply! >= b.min && j.atsScoreAtApply! <= b.max);
@@ -2173,10 +2258,13 @@ export async function registerRoutes(
         };
       });
 
+      const bestVersion = versionInterviewRate.length > 0 ? versionInterviewRate[0] : null;
+
       res.json({
         totalJobsScraped,
         totalJobsImported,
         totalJobs: allJobs.length,
+        totalReviewed,
         totalApplications,
         totalInterviews,
         totalOffers,
@@ -2186,17 +2274,24 @@ export async function registerRoutes(
         avgDaysAppliedToInterview,
         avgDaysBetweenApplications,
         applicationsPerWeek,
+        applicationsPerDay,
         interviewsPerMonth,
         jobsPerDay,
+        applicationsByRoleType,
         atsDistribution,
         atsVsInterviewRate,
         versionInterviewRate,
+        bestVersion,
         topCompanies,
         topTitles,
         workModeBreakdown,
         atsImprovements,
         statusFunnel,
         pipelineFunnel,
+        jobMarketTopTitles,
+        jobMarketTopCompanies,
+        jobMarketTopSkills,
+        avgMatchScoreByRole,
         totalVersions: allVersions.length,
         avgAtsBefore: allVersions.length > 0 ? Math.round(allVersions.reduce((a, v) => a + v.atsScoreBefore, 0) / allVersions.length) : 0,
         avgAtsAfter: allVersions.length > 0 ? Math.round(allVersions.reduce((a, v) => a + v.atsScoreAfter, 0) / allVersions.length) : 0,
