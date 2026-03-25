@@ -92,6 +92,59 @@ function TagInput({ label, values, onChange, placeholder, testId }: {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Lightweight preview ranking — runs on the client before import so we can
+// send the best-matching jobs first.  No AI call needed.
+// ---------------------------------------------------------------------------
+
+function computePreviewScore(job: LinkedInJobResult, searchRoles: string): number {
+  let score = 0;
+  const titleLower = (job.title ?? "").toLowerCase();
+  const descLower  = (job.description ?? "").toLowerCase();
+  const locLower   = (job.location ?? "").toLowerCase();
+
+  // ── Title relevance (0–40 pts) ───────────────────────────────────────────
+  const roles = searchRoles
+    .split(",")
+    .map((r) => r.trim().toLowerCase())
+    .filter(Boolean);
+  outer: for (const role of roles) {
+    const words = role.split(/\s+/).filter((w) => w.length > 2);
+    const matched = words.filter((w) => titleLower.includes(w));
+    if (words.length > 0 && matched.length === words.length) { score += 40; break outer; }
+    if (matched.length > 0)                                   { score += 20; break outer; }
+  }
+
+  // ── Freshness (0–25 pts) ─────────────────────────────────────────────────
+  const fp = job.datePosted ?? "";
+  if      (fp.includes("24h")) score += 25;
+  else if (fp.includes("48h")) score += 20;
+  else if (fp.includes("72h")) score += 12;
+  else if (fp.includes("7d"))  score += 5;
+
+  // ── Remote / hybrid signal (0–20 pts) ───────────────────────────────────
+  const combined = `${locLower} ${descLower}`;
+  if (combined.includes("fully remote") || combined.includes("100% remote") || combined.includes("work from home")) score += 20;
+  else if (combined.includes("remote"))  score += 15;
+  else if (combined.includes("hybrid"))  score += 8;
+
+  // ── Description quality (0–15 pts) ──────────────────────────────────────
+  const dl = descLower.length;
+  if (dl > 2000) score += 15;
+  else if (dl > 500) score += 8;
+
+  return Math.min(score, 100);
+}
+
+function getPriorityTier(score: number): { label: string; className: string } {
+  if (score >= 80) return { label: "Apply Now",      className: "text-green-700 bg-green-50 border-green-200 dark:text-green-300 dark:bg-green-900/30 dark:border-green-700" };
+  if (score >= 60) return { label: "Strong Match",   className: "text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-900/30 dark:border-blue-700" };
+  if (score >= 40) return { label: "Moderate Match", className: "text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-900/30 dark:border-amber-700" };
+  return                   { label: "Low Match",      className: "text-muted-foreground bg-muted/40 border-muted" };
+}
+
+// ---------------------------------------------------------------------------
+
 function ResultsBadge({ result }: { result: string }) {
   switch (result) {
     case "imported":
@@ -121,6 +174,7 @@ export default function JobDiscovery() {
   const [selectedJobIndices, setSelectedJobIndices] = useState<Set<number>>(new Set());
   const [liImportSummary, setLiImportSummary] = useState<{ imported: number; duplicates: number; failed: number; repaired: number; insufficient: number; missingIds: number; rawCount: number; scanBatchLabel?: string } | null>(null);
   const [liSearchCount, setLiSearchCount] = useState<number>(0);
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number; batchLabel: string } | null>(null);
   const [liDebug, setLiDebug] = useState<{
     actorId: string;
     rolesSent: string[];
@@ -209,6 +263,67 @@ export default function JobDiscovery() {
       toast({ title: "Import Failed", description: err?.message, variant: "destructive" });
     },
   });
+
+  // Sequential priority-first import — ranks results client-side, then sends
+  // them to the existing endpoint in batches of 20, best matches first.
+  const handleImportByPriority = async (limit?: number) => {
+    if (liResults.length === 0 || importProgress) return;
+
+    // Rank all results by preview score descending
+    const ranked = [...liResults]
+      .map((job) => ({ job, score: computePreviewScore(job, liRoles) }))
+      .sort((a, b) => b.score - a.score)
+      .map(({ job }) => job);
+
+    const toImport = limit ? ranked.slice(0, limit) : ranked;
+    const batchSize = 20;
+
+    const accumulated = { imported: 0, duplicates: 0, failed: 0, repaired: 0, insufficient: 0, missingIds: 0, rawCount: 0, scanBatchLabel: "" };
+
+    for (let start = 0; start < toImport.length; start += batchSize) {
+      const batch = toImport.slice(start, Math.min(start + batchSize, toImport.length));
+      const done  = start + batch.length;
+      setImportProgress({ done, total: toImport.length, batchLabel: `Importing top-priority jobs ${start + 1}–${done} of ${toImport.length}` });
+
+      try {
+        const r    = await apiRequest("POST", "/api/import-linkedin-jobs", { jobs: batch });
+        const data = await r.json();
+        accumulated.imported     += data.imported     ?? 0;
+        accumulated.duplicates   += data.duplicates   ?? 0;
+        accumulated.failed       += data.failed       ?? 0;
+        accumulated.repaired     += data.repaired     ?? 0;
+        accumulated.insufficient += data.insufficient ?? 0;
+        accumulated.missingIds   += data.missingIds   ?? 0;
+        accumulated.rawCount     += data.rawCount     ?? 0;
+        if (data.scanBatchLabel) accumulated.scanBatchLabel = data.scanBatchLabel;
+      } catch (err: any) {
+        toast({ title: "Batch Import Failed", description: err?.message, variant: "destructive" });
+        break;
+      }
+    }
+
+    setImportProgress(null);
+    setLiImportSummary(accumulated);
+    queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+
+    const parts: string[] = [];
+    if (accumulated.imported > 0)     parts.push(`${accumulated.imported} new`);
+    if (accumulated.repaired > 0)     parts.push(`${accumulated.repaired} repaired`);
+    if (accumulated.duplicates > 0)   parts.push(`${accumulated.duplicates} already in inbox`);
+    if (accumulated.failed > 0)       parts.push(`${accumulated.failed} failed`);
+    if (accumulated.insufficient > 0) parts.push(`${accumulated.insufficient} skipped`);
+    const nothingNew = accumulated.imported === 0 && accumulated.repaired === 0;
+    const allDupes   = nothingNew && accumulated.duplicates > 0;
+    toast({
+      title: accumulated.imported > 0 || accumulated.repaired > 0
+        ? "Import Complete"
+        : allDupes ? "All Jobs Already in Inbox" : "Nothing Imported",
+      description: allDupes
+        ? `All ${accumulated.rawCount} jobs were already in your inbox.`
+        : parts.join(" · ") + ((accumulated.imported > 0 || accumulated.repaired > 0) ? " — check Jobs Inbox." : ""),
+      variant: (accumulated.imported > 0 || accumulated.repaired > 0) ? "default" : "destructive",
+    });
+  };
 
   const toggleJobSelection = (idx: number) => {
     setSelectedJobIndices((prev) => {
@@ -790,6 +905,7 @@ export default function JobDiscovery() {
 
             {liResults.length > 0 && !liSearchMutation.isPending && (
               <>
+                {/* Manual selection import */}
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -797,7 +913,7 @@ export default function JobDiscovery() {
                     if (jobs.length === 0) return;
                     liImportMutation.mutate(jobs);
                   }}
-                  disabled={liImportMutation.isPending || selectedJobIndices.size === 0}
+                  disabled={liImportMutation.isPending || !!importProgress || selectedJobIndices.size === 0}
                   data-testid="button-import-selected"
                 >
                   {liImportMutation.isPending
@@ -805,17 +921,41 @@ export default function JobDiscovery() {
                     : <CheckCircle2 className="h-4 w-4 mr-2" />}
                   Import Selected ({selectedJobIndices.size})
                 </Button>
+
+                {/* Priority-first batch import buttons */}
+                <Button
+                  onClick={() => handleImportByPriority(20)}
+                  disabled={liImportMutation.isPending || !!importProgress}
+                  data-testid="button-import-top-20"
+                >
+                  {importProgress
+                    ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    : <Zap className="h-4 w-4 mr-2" />}
+                  Import Top 20
+                </Button>
                 <Button
                   variant="outline"
-                  onClick={() => liImportMutation.mutate(liResults)}
-                  disabled={liImportMutation.isPending}
-                  data-testid="button-import-all"
+                  onClick={() => handleImportByPriority(50)}
+                  disabled={liImportMutation.isPending || !!importProgress}
+                  data-testid="button-import-top-50"
                 >
-                  {liImportMutation.isPending
+                  {importProgress
                     ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     : <CheckCircle2 className="h-4 w-4 mr-2" />}
-                  Import All ({liResults.length})
+                  Import Top 50
                 </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => handleImportByPriority()}
+                  disabled={liImportMutation.isPending || !!importProgress}
+                  data-testid="button-import-all-priority"
+                >
+                  {importProgress
+                    ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    : <CheckCircle2 className="h-4 w-4 mr-2" />}
+                  Import All by Priority ({liResults.length})
+                </Button>
+
                 <span className="text-sm text-muted-foreground" data-testid="li-result-count">
                   {liResults.length} result{liResults.length !== 1 ? "s" : ""} found
                 </span>
@@ -830,7 +970,14 @@ export default function JobDiscovery() {
             </div>
           )}
 
-          {liImportMutation.isPending && (
+          {importProgress && (
+            <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground" data-testid="li-import-progress">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>{importProgress.batchLabel} — highest-priority jobs import first</span>
+              <span className="text-xs text-muted-foreground/70">({Math.round((importProgress.done / importProgress.total) * 100)}%)</span>
+            </div>
+          )}
+          {!importProgress && liImportMutation.isPending && (
             <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
               Importing jobs and running ATS scoring…
@@ -951,6 +1098,7 @@ export default function JobDiscovery() {
                         title="Select all"
                       />
                     </th>
+                    <th className="pb-2 pr-3 font-medium">Priority</th>
                     <th className="pb-2 pr-3 font-medium">Job Title</th>
                     <th className="pb-2 pr-3 font-medium">Company</th>
                     <th className="pb-2 pr-3 font-medium">Location</th>
@@ -960,51 +1108,62 @@ export default function JobDiscovery() {
                   </tr>
                 </thead>
                 <tbody>
-                  {liResults.map((job, idx) => (
-                    <tr
-                      key={idx}
-                      className={`border-b last:border-0 hover:bg-muted/50 cursor-pointer ${selectedJobIndices.has(idx) ? "bg-primary/5" : ""}`}
-                      onClick={() => toggleJobSelection(idx)}
-                      data-testid={`li-result-row-${idx}`}
-                    >
-                      <td className="py-2 pr-2" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selectedJobIndices.has(idx)}
-                          onChange={() => toggleJobSelection(idx)}
-                          data-testid={`checkbox-li-job-${idx}`}
-                          className="rounded"
-                        />
-                      </td>
-                      <td className="py-2 pr-3 max-w-[200px]">
-                        <span className="font-medium truncate block" data-testid={`li-title-${idx}`}>{job.title || "—"}</span>
-                      </td>
-                      <td className="py-2 pr-3 text-muted-foreground" data-testid={`li-company-${idx}`}>{job.company || "—"}</td>
-                      <td className="py-2 pr-3 text-muted-foreground max-w-[150px] truncate" data-testid={`li-location-${idx}`}>{job.location || "—"}</td>
-                      <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap" data-testid={`li-date-${idx}`}>{job.datePosted || "—"}</td>
-                      <td className="py-2 pr-3">
-                        <Badge variant="outline" className="text-[#0A66C2] border-[#0A66C2]/30">
-                          <SiLinkedin className="h-3 w-3 mr-1" />
-                          {job.source || "LinkedIn"}
-                        </Badge>
-                      </td>
-                      <td className="py-2" onClick={(e) => e.stopPropagation()}>
-                        {job.applyLink ? (
-                          <a
-                            href={job.applyLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-primary hover:underline text-xs"
-                            data-testid={`li-apply-${idx}`}
-                          >
-                            Apply <ExternalLink className="h-3 w-3" />
-                          </a>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {[...liResults]
+                    .map((job, origIdx) => ({ job, origIdx, score: computePreviewScore(job, liRoles) }))
+                    .sort((a, b) => b.score - a.score)
+                    .map(({ job, origIdx, score }, rank) => {
+                      const tier = getPriorityTier(score);
+                      return (
+                        <tr
+                          key={origIdx}
+                          className={`border-b last:border-0 hover:bg-muted/50 cursor-pointer ${selectedJobIndices.has(origIdx) ? "bg-primary/5" : ""}`}
+                          onClick={() => toggleJobSelection(origIdx)}
+                          data-testid={`li-result-row-${rank}`}
+                        >
+                          <td className="py-2 pr-2" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selectedJobIndices.has(origIdx)}
+                              onChange={() => toggleJobSelection(origIdx)}
+                              data-testid={`checkbox-li-job-${origIdx}`}
+                              className="rounded"
+                            />
+                          </td>
+                          <td className="py-2 pr-3 whitespace-nowrap">
+                            <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${tier.className}`} data-testid={`li-tier-${rank}`}>
+                              {tier.label}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-3 max-w-[200px]">
+                            <span className="font-medium truncate block" data-testid={`li-title-${rank}`}>{job.title || "—"}</span>
+                          </td>
+                          <td className="py-2 pr-3 text-muted-foreground" data-testid={`li-company-${rank}`}>{job.company || "—"}</td>
+                          <td className="py-2 pr-3 text-muted-foreground max-w-[150px] truncate" data-testid={`li-location-${rank}`}>{job.location || "—"}</td>
+                          <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap" data-testid={`li-date-${rank}`}>{job.datePosted || "—"}</td>
+                          <td className="py-2 pr-3">
+                            <Badge variant="outline" className="text-[#0A66C2] border-[#0A66C2]/30">
+                              <SiLinkedin className="h-3 w-3 mr-1" />
+                              {job.source || "LinkedIn"}
+                            </Badge>
+                          </td>
+                          <td className="py-2" onClick={(e) => e.stopPropagation()}>
+                            {job.applyLink ? (
+                              <a
+                                href={job.applyLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-primary hover:underline text-xs"
+                                data-testid={`li-apply-${rank}`}
+                              >
+                                Apply <ExternalLink className="h-3 w-3" />
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
