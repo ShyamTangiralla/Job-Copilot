@@ -6,6 +6,7 @@ export async function seedDatabase() {
   const existingProfile = await db.select().from(candidateProfile).limit(1);
   if (existingProfile.length > 0) return;
 
+  // ── Candidate Profile ─────────────────────────────────────────────────────
   await db.insert(candidateProfile).values({
     fullName: "Alex Rivera",
     email: "alex.rivera@email.com",
@@ -15,43 +16,46 @@ export async function seedDatabase() {
     portfolioUrl: "https://alexrivera.dev",
     workAuthorization: "US Citizen",
     sponsorshipRequired: false,
-    salaryPreference: "$80,000 - $110,000",
+    salaryPreference: "$90,000 - $120,000",
     willingToRelocate: true,
     preferredLocations: "Chicago, Remote, New York",
     preferredJobTypes: ["Remote", "Hybrid"],
     yearsOfExperience: "5",
   });
 
+  // ── Resumes ───────────────────────────────────────────────────────────────
   const insertedResumes = await db.insert(resumes).values([
     {
       name: "Data Analyst Resume - General",
       roleType: "Data Analyst",
-      plainText: "Alex Rivera | Data Analyst\nChicago, IL | alex.rivera@email.com\n\nSummary: Results-driven Data Analyst with 5 years of experience in SQL, Python, Tableau, and Excel. Strong background in data cleaning, statistical analysis, and reporting dashboards.\n\nExperience:\n- Senior Data Analyst, TechCorp (2021-Present): Built automated reporting pipelines, reduced report generation time by 40%. Created Tableau dashboards for executive team. Analyzed 5M+ records per month.\n- Data Analyst, DataWorks (2019-2021): Performed ad-hoc analysis, maintained ETL processes, supported business intelligence team.\n\nSkills: SQL, Python, Tableau, Power BI, Excel, R, ETL, Data Warehousing, Statistics, A/B Testing",
+      plainText: "Alex Rivera | Data Analyst\nChicago, IL | alex.rivera@email.com | (312) 555-0198\n\nSummary: Results-driven Data Analyst with 5 years of experience in SQL, Python, Tableau, and Excel. Strong background in data cleaning, statistical analysis, and reporting dashboards.\n\nExperience:\n- Senior Data Analyst, TechCorp (2021-Present): Built automated reporting pipelines, reduced report generation time by 40%. Created Tableau dashboards for executive team. Analyzed 5M+ records per month.\n- Data Analyst, DataWorks (2019-2021): Performed ad-hoc analysis, maintained ETL processes, supported business intelligence team.\n\nSkills: SQL, Python, Tableau, Power BI, Excel, R, ETL, Data Warehousing, Statistics, A/B Testing",
       active: true,
     },
     {
       name: "Healthcare Data Analyst Resume",
       roleType: "Healthcare Data Analyst",
-      plainText: "Alex Rivera | Healthcare Data Analyst\nChicago, IL | alex.rivera@email.com\n\nSummary: Healthcare-focused Data Analyst with experience in clinical data, EHR systems, and regulatory reporting. HIPAA certified with strong SQL and analytics skills.\n\nExperience:\n- Senior Data Analyst, TechCorp (2021-Present): Analyzed healthcare claims data, built quality metrics dashboards, ensured HIPAA compliance in all data handling. Worked with 3M+ patient records.\n- Data Analyst, DataWorks (2019-2021): Supported clinical research team with data extraction and statistical analysis.\n\nSkills: SQL, Python, Tableau, Epic/EHR, HIPAA, Clinical Data, Healthcare Analytics, SAS, Power BI",
+      plainText: "Alex Rivera | Healthcare Data Analyst\nChicago, IL | alex.rivera@email.com | (312) 555-0198\n\nSummary: Healthcare-focused Data Analyst with experience in clinical data, EHR systems, and regulatory reporting. HIPAA certified with strong SQL and analytics skills.\n\nExperience:\n- Senior Data Analyst, TechCorp (2021-Present): Analyzed healthcare claims data, built quality metrics dashboards, ensured HIPAA compliance in all data handling. Worked with 3M+ patient records.\n- Data Analyst, DataWorks (2019-2021): Supported clinical research team with data extraction and statistical analysis.\n\nSkills: SQL, Python, Tableau, Epic/EHR, HIPAA, Clinical Data, Healthcare Analytics, SAS, Power BI",
       active: true,
     },
     {
       name: "Healthcare Analyst Resume",
       roleType: "Healthcare Analyst",
-      plainText: "Alex Rivera | Healthcare Analyst\nChicago, IL | alex.rivera@email.com\n\nSummary: Healthcare Analyst with expertise in operations analysis, quality improvement, and process optimization within healthcare organizations.\n\nExperience:\n- Senior Data Analyst, TechCorp (2021-Present): Led operational efficiency projects, analyzed patient flow data, presented findings to clinical leadership.\n- Data Analyst, DataWorks (2019-2021): Created operational reports, tracked KPIs for patient satisfaction and outcomes.\n\nSkills: Healthcare Operations, Process Improvement, SQL, Excel, Lean Six Sigma, Quality Metrics, Regulatory Compliance",
+      plainText: "Alex Rivera | Healthcare Analyst\nChicago, IL | alex.rivera@email.com | (312) 555-0198\n\nSummary: Healthcare Analyst with expertise in operations analysis, quality improvement, and process optimization within healthcare organizations.\n\nExperience:\n- Senior Data Analyst, TechCorp (2021-Present): Led operational efficiency projects, analyzed patient flow data, presented findings to clinical leadership.\n- Data Analyst, DataWorks (2019-2021): Created operational reports, tracked KPIs for patient satisfaction and outcomes.\n\nSkills: Healthcare Operations, Process Improvement, SQL, Excel, Lean Six Sigma, Quality Metrics, Regulatory Compliance",
       active: true,
     },
     {
       name: "Business Analyst Resume",
       roleType: "Business Analyst",
-      plainText: "Alex Rivera | Business Analyst\nChicago, IL | alex.rivera@email.com\n\nSummary: Business Analyst with strong requirements gathering, stakeholder management, and data analysis skills. Experienced in Agile environments.\n\nExperience:\n- Senior Data Analyst, TechCorp (2021-Present): Gathered business requirements, created process documentation, facilitated sprint planning sessions.\n- Data Analyst, DataWorks (2019-2021): Supported product team with market analysis and competitive research.\n\nSkills: Requirements Gathering, Agile/Scrum, JIRA, SQL, Stakeholder Management, Process Mapping, UAT, Business Intelligence",
+      plainText: "Alex Rivera | Business Analyst\nChicago, IL | alex.rivera@email.com | (312) 555-0198\n\nSummary: Business Analyst with strong requirements gathering, stakeholder management, and data analysis skills. Experienced in Agile environments.\n\nExperience:\n- Senior Data Analyst, TechCorp (2021-Present): Gathered business requirements, created process documentation, facilitated sprint planning sessions.\n- Data Analyst, DataWorks (2019-2021): Supported product team with market analysis and competitive research.\n\nSkills: Requirements Gathering, Agile/Scrum, JIRA, SQL, Stakeholder Management, Process Mapping, UAT, Business Intelligence",
       active: true,
     },
   ]).returning({ id: resumes.id });
 
   const resumeIds = insertedResumes.map(r => r.id);
 
+  // ── Jobs (20 total) ───────────────────────────────────────────────────────
   const insertedJobs = await db.insert(jobs).values([
+    // ── 1: Applied — LinkedIn — Hybrid
     {
       title: "Data Analyst II",
       company: "Acme Analytics",
@@ -73,10 +77,12 @@ export async function seedDatabase() {
       atsScoreAtApply: 82,
       salaryMin: 85000,
       salaryMax: 105000,
-      notes: "Great company culture, strong analytics team.",
-      followUpDate: "2026-03-12",
+      notes: "Great company culture, strong analytics team. Applied with tailored resume.",
+      followUpDate: "2026-04-01",
+      resumeVersionId: null,
       importSource: "__manual__",
     },
+    // ── 2: Interview — Indeed — Remote
     {
       title: "Healthcare Data Analyst",
       company: "MedTech Solutions",
@@ -101,13 +107,14 @@ export async function seedDatabase() {
       atsScoreAtApply: 88,
       salaryMin: 90000,
       salaryMax: 115000,
-      notes: "Passed phone screen. Round 2 scheduled with hiring manager.",
-      followUpDate: "2026-03-15",
+      notes: "Passed phone screen. Round 2 scheduled with hiring manager on March 22.",
+      followUpDate: "2026-03-22",
       recruiterName: "Jessica Lee",
       recruiterEmail: "j.lee@medtech.com",
       recruiterContactDate: "2026-03-06",
       importSource: "__manual__",
     },
+    // ── 3: Applied — Glassdoor — Onsite
     {
       title: "Business Analyst - Operations",
       company: "Global Dynamics",
@@ -115,7 +122,7 @@ export async function seedDatabase() {
       location: "New York, NY",
       workMode: "Onsite",
       datePosted: "2026-03-02",
-      description: "Looking for a Business Analyst to drive operational improvements. You'll gather requirements from stakeholders, create process documentation, and work with the development team in an Agile environment. Experience with JIRA and SQL required.",
+      description: "Looking for a Business Analyst to drive operational improvements. You'll gather requirements from stakeholders, create process documentation, and work with the development team in an Agile environment. Experience with JIRA and SQL required. Healthcare industry experience a plus.",
       applyLink: "https://glassdoor.com/jobs/abcde",
       roleClassification: "Business Analyst",
       fitLabel: "Possible Match",
@@ -130,9 +137,10 @@ export async function seedDatabase() {
       salaryMin: 80000,
       salaryMax: 100000,
       notes: "Onsite in NYC. Would need to consider relocation or remote negotiation.",
-      followUpDate: "2026-03-13",
+      followUpDate: "2026-04-01",
       importSource: "__manual__",
     },
+    // ── 4: Applied — LinkedIn — Remote
     {
       title: "Senior Data Analyst",
       company: "FinVista Corp",
@@ -140,7 +148,7 @@ export async function seedDatabase() {
       location: "San Francisco, CA",
       workMode: "Remote",
       datePosted: "2026-03-01",
-      description: "FinVista is hiring a Senior Data Analyst for our finance analytics team. You will build data models, create automated reporting solutions, and mentor junior analysts. Requires 5+ years of experience with SQL, Python, and Tableau.",
+      description: "FinVista is hiring a Senior Data Analyst for our finance analytics team. You will build data models, create automated reporting solutions, and mentor junior analysts. Requires 5+ years of experience with SQL, Python, and Tableau. Financial services experience preferred.",
       applyLink: "https://linkedin.com/jobs/senior-da",
       roleClassification: "Data Analyst",
       fitLabel: "Possible Match",
@@ -155,9 +163,10 @@ export async function seedDatabase() {
       salaryMin: 100000,
       salaryMax: 130000,
       notes: "Applied via LinkedIn Easy Apply. Waiting for response.",
-      followUpDate: "2026-03-09",
+      followUpDate: "2026-04-01",
       importSource: "__manual__",
     },
+    // ── 5: Final Round — Company Website — Hybrid
     {
       title: "Healthcare Analyst - Quality Improvement",
       company: "Northshore Health",
@@ -182,13 +191,14 @@ export async function seedDatabase() {
       atsScoreAtApply: 83,
       salaryMin: 75000,
       salaryMax: 95000,
-      notes: "Final round interview scheduled. Panel interview with 3 stakeholders.",
-      followUpDate: "2026-03-20",
+      notes: "Final round panel interview with 3 stakeholders. Very positive feedback.",
+      followUpDate: "2026-03-25",
       recruiterName: "Mark Thompson",
       recruiterEmail: "m.thompson@northshorehealth.com",
       recruiterContactDate: "2026-03-01",
       importSource: "__manual__",
     },
+    // ── 6: Offer — Referral — Remote (THE OFFER)
     {
       title: "Data Analyst - Analytics Engineering",
       company: "StreamCorp",
@@ -211,20 +221,21 @@ export async function seedDatabase() {
       interviewResult: "Offer Received",
       offerSalary: "105000",
       offerDate: "2026-03-08",
-      offerDeadline: "2026-03-25",
+      offerDeadline: "2026-04-05",
       offerDecision: "Negotiating",
-      offerNotes: "Base: $105k + 10% bonus + equity. Negotiating for $115k.",
+      offerNotes: "Base: $105k + 10% bonus + equity. Negotiating for $115k. Very excited about this role.",
       atsScore: 91,
       atsScoreAtApply: 91,
       salaryMin: 95000,
       salaryMax: 120000,
-      notes: "Referred by John Chen. Received offer. Negotiating salary.",
-      decisionDate: "2026-03-25",
+      notes: "Referred by John Chen. Received offer on March 8. Negotiating salary to $115k.",
+      decisionDate: "2026-04-05",
       recruiterName: "Sarah Park",
       recruiterEmail: "s.park@streamcorp.com",
       recruiterContactDate: "2026-02-22",
       importSource: "__manual__",
     },
+    // ── 7: Skipped — Referral — Remote
     {
       title: "Junior Data Analyst",
       company: "StartupXYZ",
@@ -242,9 +253,9 @@ export async function seedDatabase() {
       status: "Skipped",
       priority: "Low",
       notes: "Too junior for current experience level.",
-      followUpDate: "",
       importSource: "__manual__",
     },
+    // ── 8: Applied — LinkedIn — Remote
     {
       title: "BI Analyst - Healthcare",
       company: "Optum Analytics",
@@ -269,9 +280,10 @@ export async function seedDatabase() {
       notes: "Strong match on healthcare + BI. Applied with tailored resume.",
       importSource: "__manual__",
     },
+    // ── 9: Rejected — Indeed — Hybrid
     {
       title: "Data Analyst",
-      company: "RetailMetrics",
+      company: "RetailMetrics Inc",
       source: "Indeed",
       location: "Chicago, IL",
       workMode: "Hybrid",
@@ -290,9 +302,10 @@ export async function seedDatabase() {
       atsScoreAtApply: 75,
       salaryMin: 72000,
       salaryMax: 90000,
-      notes: "Received rejection email 5 days after applying. No feedback.",
+      notes: "Received rejection email 5 days after applying. No feedback provided.",
       importSource: "__manual__",
     },
+    // ── 10: New — LinkedIn — Remote
     {
       title: "Analytics Engineer",
       company: "DataLayer",
@@ -314,6 +327,7 @@ export async function seedDatabase() {
       notes: "",
       importSource: "__manual__",
     },
+    // ── 11: Reviewed — Company Website — Remote
     {
       title: "Healthcare Data Analyst III",
       company: "BlueCross Analytics",
@@ -335,13 +349,242 @@ export async function seedDatabase() {
       notes: "Top match — healthcare + claims experience. Need to apply ASAP.",
       importSource: "__manual__",
     },
+    // ── 12: Interview — Recruiter — Remote (2nd interview)
+    {
+      title: "Product Analyst",
+      company: "TechNova",
+      source: "Recruiter",
+      location: "Remote",
+      workMode: "Remote",
+      datePosted: "2026-03-05",
+      description: "TechNova is looking for a Product Analyst to join our growth team. You'll analyze user behavior, run A/B tests, work with Mixpanel and BigQuery, and collaborate closely with product managers to drive data-informed decisions.",
+      applyLink: "https://technova.io/jobs/product-analyst",
+      roleClassification: "Data Analyst",
+      fitLabel: "Strong Match",
+      resumeRecommendation: "Data Analyst",
+      applyPriorityScore: 81,
+      applyPriorityLabel: "Apply Immediately",
+      status: "Interview",
+      priority: "High",
+      dateApplied: "2026-03-07",
+      interviewDate: "2026-03-18",
+      interviewRound: "Round 1 Technical",
+      interviewResult: "Passed",
+      atsScore: 84,
+      atsScoreAtApply: 84,
+      salaryMin: 95000,
+      salaryMax: 120000,
+      notes: "Recruiter reached out on LinkedIn. Technical round passed. Waiting for round 2 details.",
+      recruiterName: "Lisa Huang",
+      recruiterEmail: "l.huang@technova.io",
+      recruiterContactDate: "2026-03-05",
+      importSource: "__manual__",
+    },
+    // ── 13: Applied — Indeed — Remote
+    {
+      title: "Data Analyst - Marketing",
+      company: "BrandMetrics",
+      source: "Indeed",
+      location: "Remote",
+      workMode: "Remote",
+      datePosted: "2026-03-09",
+      description: "BrandMetrics is seeking a Data Analyst to support our marketing analytics function. You'll work with Google Analytics, Looker, and SQL to measure campaign performance, build attribution models, and deliver weekly reports to the CMO.",
+      applyLink: "https://indeed.com/jobs/brandmetrics-da",
+      roleClassification: "Data Analyst",
+      fitLabel: "Possible Match",
+      resumeRecommendation: "Data Analyst",
+      applyPriorityScore: 60,
+      applyPriorityLabel: "Medium Priority",
+      status: "Applied",
+      priority: "Medium",
+      dateApplied: "2026-03-10",
+      atsScore: 69,
+      atsScoreAtApply: 69,
+      salaryMin: 75000,
+      salaryMax: 95000,
+      notes: "Applied with general resume. Marketing analytics is a slight stretch but worth trying.",
+      importSource: "__manual__",
+    },
+    // ── 14: No Response — Glassdoor — Onsite
+    {
+      title: "Data Engineer I",
+      company: "CorePipeline",
+      source: "Glassdoor",
+      location: "Boston, MA",
+      workMode: "Onsite",
+      datePosted: "2026-02-22",
+      description: "CorePipeline is hiring a junior Data Engineer to build and maintain ETL pipelines. Requires Python, SQL, and Airflow experience. AWS or GCP preferred.",
+      applyLink: "https://glassdoor.com/jobs/corepipeline",
+      roleClassification: "Data Analyst",
+      fitLabel: "Possible Match",
+      resumeRecommendation: "Data Analyst",
+      applyPriorityScore: 48,
+      applyPriorityLabel: "Low Priority",
+      status: "No Response",
+      priority: "Low",
+      dateApplied: "2026-02-24",
+      atsScore: 58,
+      atsScoreAtApply: 58,
+      salaryMin: 80000,
+      salaryMax: 100000,
+      notes: "Applied 3 weeks ago. No response. Job was onsite in Boston which is a reach.",
+      importSource: "__manual__",
+    },
+    // ── 15: Interview — LinkedIn — Hybrid (3rd interview)
+    {
+      title: "Clinical Data Analyst",
+      company: "Northwestern Medicine",
+      source: "LinkedIn",
+      location: "Chicago, IL",
+      workMode: "Hybrid",
+      datePosted: "2026-03-11",
+      description: "Northwestern Medicine is seeking a Clinical Data Analyst to support our quality and outcomes reporting team. You'll work with Epic EMR data, SQL Server, and Power BI to support clinical leadership decision-making.",
+      applyLink: "https://nm.org/careers/cda",
+      roleClassification: "Healthcare Data Analyst",
+      fitLabel: "Strong Match",
+      resumeRecommendation: "Healthcare Data Analyst",
+      applyPriorityScore: 87,
+      applyPriorityLabel: "Apply Immediately",
+      status: "Interview",
+      priority: "High",
+      dateApplied: "2026-03-12",
+      interviewDate: "2026-03-20",
+      interviewRound: "Phone Screen",
+      interviewResult: "Pending",
+      atsScore: 89,
+      atsScoreAtApply: 89,
+      salaryMin: 80000,
+      salaryMax: 105000,
+      notes: "Phone screen with HR scheduled for March 20. Very strong match on healthcare + Epic experience.",
+      recruiterName: "Amy Walsh",
+      recruiterEmail: "a.walsh@nm.org",
+      recruiterContactDate: "2026-03-13",
+      importSource: "__manual__",
+    },
+    // ── 16: Ready to Apply — Recruiter — Hybrid
+    {
+      title: "Operations Analyst",
+      company: "Midwest Logistics",
+      source: "Recruiter",
+      location: "Chicago, IL",
+      workMode: "Hybrid",
+      datePosted: "2026-03-14",
+      description: "Midwest Logistics is hiring an Operations Analyst to optimize freight and supply chain operations. Requires SQL, Excel, and experience with Tableau or Power BI. Logistics or operations background a plus.",
+      applyLink: "https://midwestlogistics.com/jobs/ops-analyst",
+      roleClassification: "Business Analyst",
+      fitLabel: "Possible Match",
+      resumeRecommendation: "Business Analyst",
+      applyPriorityScore: 58,
+      applyPriorityLabel: "Medium Priority",
+      status: "Ready to Apply",
+      priority: "Medium",
+      salaryMin: 70000,
+      salaryMax: 90000,
+      notes: "Recruiter sent this over. Resume needs minor tailoring before applying.",
+      importSource: "__manual__",
+    },
+    // ── 17: Applied — LinkedIn — Remote
+    {
+      title: "Insights Analyst",
+      company: "Aperture Research",
+      source: "LinkedIn",
+      location: "Remote",
+      workMode: "Remote",
+      datePosted: "2026-03-06",
+      description: "Aperture Research seeks an Insights Analyst with strong statistical modeling and survey data experience. You'll work with R or Python, build dashboards, and present market research findings to Fortune 500 clients.",
+      applyLink: "https://linkedin.com/jobs/aperture-ia",
+      roleClassification: "Data Analyst",
+      fitLabel: "Possible Match",
+      resumeRecommendation: "Data Analyst",
+      applyPriorityScore: 62,
+      applyPriorityLabel: "Medium Priority",
+      status: "Applied",
+      priority: "Medium",
+      dateApplied: "2026-03-08",
+      atsScore: 67,
+      atsScoreAtApply: 67,
+      salaryMin: 78000,
+      salaryMax: 98000,
+      notes: "Applied with general data analyst resume. Interesting work in market research.",
+      importSource: "__manual__",
+    },
+    // ── 18: Rejected — Indeed — Onsite
+    {
+      title: "Financial Analyst - FP&A",
+      company: "Summit Capital",
+      source: "Indeed",
+      location: "New York, NY",
+      workMode: "Onsite",
+      datePosted: "2026-02-26",
+      description: "Summit Capital is hiring a Financial Analyst for our FP&A team. Requires advanced Excel, financial modeling, and SQL. CFA or MBA preferred. Will support budgeting, forecasting, and variance analysis.",
+      applyLink: "https://summitcapital.com/careers",
+      roleClassification: "Business Analyst",
+      fitLabel: "Weak Match",
+      resumeRecommendation: "Business Analyst",
+      applyPriorityScore: 38,
+      applyPriorityLabel: "Low Priority",
+      status: "Rejected",
+      priority: "Low",
+      dateApplied: "2026-02-27",
+      atsScore: 52,
+      atsScoreAtApply: 52,
+      salaryMin: 90000,
+      salaryMax: 115000,
+      notes: "Rejected within 48 hours. Role was more finance-specific than data analytics.",
+      importSource: "__manual__",
+    },
+    // ── 19: Saved — Company Website — Remote
+    {
+      title: "People Analytics Analyst",
+      company: "HRTech Global",
+      source: "Company Website",
+      location: "Remote",
+      workMode: "Remote",
+      datePosted: "2026-03-15",
+      description: "HRTech Global is looking for a People Analytics Analyst to build workforce analytics capabilities. You'll use SQL, Python, and Tableau to analyze employee engagement, retention, and performance data. HRIS experience preferred.",
+      applyLink: "https://hrtech.io/careers/paa",
+      roleClassification: "Data Analyst",
+      fitLabel: "Possible Match",
+      resumeRecommendation: "Data Analyst",
+      applyPriorityScore: 55,
+      applyPriorityLabel: "Medium Priority",
+      status: "Saved",
+      priority: "Medium",
+      salaryMin: 82000,
+      salaryMax: 105000,
+      notes: "Interesting niche. Saved for later review — want to research the company more.",
+      importSource: "__manual__",
+    },
+    // ── 20: New — LinkedIn — Remote
+    {
+      title: "Data Analyst - Supply Chain",
+      company: "GlobalOps Inc",
+      source: "LinkedIn",
+      location: "Remote",
+      workMode: "Remote",
+      datePosted: "2026-03-16",
+      description: "GlobalOps is hiring a Data Analyst to support our supply chain operations team. You will analyze inventory data, build Tableau dashboards, and partner with procurement and logistics managers. SQL and Python required.",
+      applyLink: "https://linkedin.com/jobs/globalops-scda",
+      roleClassification: "Data Analyst",
+      fitLabel: "Strong Match",
+      resumeRecommendation: "Data Analyst",
+      applyPriorityScore: 73,
+      applyPriorityLabel: "High Priority",
+      status: "New",
+      priority: "High",
+      salaryMin: 83000,
+      salaryMax: 108000,
+      notes: "",
+      importSource: "__manual__",
+    },
   ]).returning({ id: jobs.id });
 
   const jobIds = insertedJobs.map(j => j.id);
 
+  // ── Resume Versions (4 versions) ─────────────────────────────────────────
   await db.insert(resumeVersions).values([
     {
-      jobId: jobIds[1],
+      jobId: jobIds[1], // MedTech Healthcare DA
       resumeId: resumeIds[1],
       versionLabel: "v1 - MedTech Healthcare DA",
       company: "MedTech Solutions",
@@ -358,7 +601,7 @@ export async function seedDatabase() {
       atsScoreAfter: 88,
     },
     {
-      jobId: jobIds[4],
+      jobId: jobIds[4], // Northshore Health Final Round
       resumeId: resumeIds[2],
       versionLabel: "v1 - Northshore Healthcare Analyst",
       company: "Northshore Health",
@@ -375,7 +618,7 @@ export async function seedDatabase() {
       atsScoreAfter: 83,
     },
     {
-      jobId: jobIds[0],
+      jobId: jobIds[0], // Acme Analytics Applied
       resumeId: resumeIds[0],
       versionLabel: "v1 - Acme Analytics Data Analyst",
       company: "Acme Analytics",
@@ -391,8 +634,26 @@ export async function seedDatabase() {
       atsScoreBefore: 74,
       atsScoreAfter: 82,
     },
+    {
+      jobId: jobIds[5], // StreamCorp Offer
+      resumeId: resumeIds[0],
+      versionLabel: "v1 - StreamCorp Analytics Engineer",
+      company: "StreamCorp",
+      jobTitle: "Data Analyst - Analytics Engineering",
+      candidateName: "Alex Rivera",
+      contact: "Chicago, IL | alex.rivera@email.com | (312) 555-0198",
+      summary: "Data Analyst with strong dbt, SQL, and Python skills. Experienced in building scalable data models and enabling self-serve analytics. Passionate about analytics engineering and data reliability.",
+      skills: "SQL (Advanced), Python, dbt, Tableau, Looker, ETL, Data Modeling, Airflow, BigQuery, Snowflake, Git, Analytics Engineering",
+      experience: "Senior Data Analyst, TechCorp (2021-Present): Built dbt data models powering 20+ Tableau dashboards. Migrated legacy ETL to modern cloud stack. Reduced pipeline failures by 60%.\n\nData Analyst, DataWorks (2019-2021): Designed SQL-based reporting pipelines and maintained data warehouse documentation.",
+      projects: "Modern Data Stack Migration: Led migration from legacy ETL to dbt + Snowflake + Tableau stack. Improved data freshness from daily to hourly for 15+ critical business metrics.",
+      education: "M.S. Business Analytics - Northwestern University (2019)\nB.S. Statistics - University of Illinois (2017)",
+      certifications: "dbt Analytics Engineering Certification\nSnowflake SnowPro Core\nTableau Desktop Certified Associate",
+      atsScoreBefore: 79,
+      atsScoreAfter: 91,
+    },
   ]);
 
+  // ── Contacts (5 contacts) ─────────────────────────────────────────────────
   await db.insert(contacts).values([
     {
       name: "Jessica Lee",
@@ -404,7 +665,7 @@ export async function seedDatabase() {
       contactType: "Recruiter",
       jobId: jobIds[1],
       lastContactDate: "2026-03-06",
-      followUpDate: "2026-03-20",
+      followUpDate: "2026-03-22",
       notes: "Very responsive. Scheduled phone screen quickly. Following up after final round.",
       isReferral: false,
     },
@@ -418,7 +679,7 @@ export async function seedDatabase() {
       jobId: jobIds[5],
       lastContactDate: "2026-02-18",
       followUpDate: "",
-      notes: "Referred me for the Analytics Engineer role. Great inside contact — helped me tailor my resume.",
+      notes: "Referred me for the Analytics Engineer role. Great inside contact — helped me tailor my resume to the job description.",
       isReferral: true,
     },
     {
@@ -429,7 +690,7 @@ export async function seedDatabase() {
       contactType: "Hiring Manager",
       jobId: jobIds[4],
       lastContactDate: "2026-03-10",
-      followUpDate: "2026-03-22",
+      followUpDate: "2026-03-25",
       notes: "Conducted final round interview. Very interested in my healthcare background. Awaiting decision.",
       isReferral: false,
     },
@@ -441,24 +702,26 @@ export async function seedDatabase() {
       linkedinUrl: "https://linkedin.com/in/priyanair",
       contactType: "Connection",
       lastContactDate: "2026-03-01",
-      followUpDate: "2026-03-28",
-      notes: "Met at Chicago Data meetup. Connected on LinkedIn. Potential for future opportunities at Acme.",
+      followUpDate: "2026-04-01",
+      notes: "Met at Chicago Data meetup. Connected on LinkedIn. Potential for future opportunities at Acme Analytics.",
       isReferral: false,
     },
     {
       name: "Sarah Park",
-      title: "Talent Acquisition",
+      title: "Talent Acquisition Manager",
       company: "StreamCorp",
       email: "s.park@streamcorp.com",
+      phone: "(415) 555-0234",
       contactType: "Recruiter",
       jobId: jobIds[5],
       lastContactDate: "2026-03-08",
-      followUpDate: "2026-03-24",
+      followUpDate: "2026-04-01",
       notes: "Extended the offer. Negotiating for $115k. Very professional and transparent about comp structure.",
       isReferral: false,
     },
   ]);
 
+  // ── Application Answers ───────────────────────────────────────────────────
   await db.insert(applicationAnswers).values([
     {
       question: "Why are you interested in this role?",
@@ -473,23 +736,51 @@ export async function seedDatabase() {
       answer: "My greatest strength is translating complex data findings into clear, actionable recommendations for non-technical stakeholders. I focus on creating visual stories through dashboards that drive decision-making.",
     },
     {
-      question: "Are you willing to work in a hybrid environment?",
-      answer: "Yes, I am comfortable working in hybrid environments. I value both in-person collaboration and focused remote work, and I have experience being productive in both settings.",
+      question: "Describe a challenging project you worked on",
+      answer: "At TechCorp, I led a project to consolidate 12 disparate data sources into a single reporting warehouse. I designed the ETL pipelines in Python, wrote the SQL data models, and built Tableau dashboards that reduced executive reporting time by 40%.",
     },
     {
-      question: "What is your expected salary?",
-      answer: "Based on my 5 years of experience and market research, I am targeting a base salary in the $85,000–$110,000 range, depending on the total compensation package including benefits, equity, and growth opportunities.",
+      question: "Where do you see yourself in 5 years?",
+      answer: "I see myself growing into a senior analytics or analytics engineering role where I can mentor junior analysts, architect data infrastructure, and serve as a strategic partner to business leadership — using data to drive company-wide decisions.",
     },
   ]);
 
-  await db.insert(settings).values({
-    key: "app_settings",
-    value: {
-      roleCategories: ["Data Analyst", "Healthcare Data Analyst", "Healthcare Analyst", "Business Analyst"],
-      sources: ["LinkedIn", "Indeed", "Glassdoor", "Company Website", "Referral"],
-      statuses: ["New", "Reviewed", "Ready to Apply", "Applied", "Skipped", "Interview", "Final Round", "Rejected", "Offer"],
+  // ── Default Settings ──────────────────────────────────────────────────────
+  await db.insert(settings).values([
+    {
+      key: "app_settings",
+      value: JSON.stringify({
+        targetRoles: ["Data Analyst", "Healthcare Data Analyst", "Business Analyst", "Analytics Engineer"],
+        preferredLocations: ["Remote", "Chicago, IL"],
+        salaryMin: 80000,
+        salaryMax: 130000,
+        workModes: ["Remote", "Hybrid"],
+        jobSources: ["LinkedIn", "Indeed", "Glassdoor", "Company Website", "Referral"],
+        keywords: ["SQL", "Python", "Tableau", "Power BI", "Healthcare", "ETL", "dbt"],
+        excludeKeywords: ["Java", "Senior Director", "VP", "C-Suite"],
+        preferredCompanies: ["BCBS", "Optum", "Northwestern Medicine", "TechNova"],
+        blacklistedCompanies: [],
+      }),
     },
-  });
-
-  console.log("Seed data inserted successfully");
+    {
+      key: "scoringWeights",
+      value: JSON.stringify({
+        roleMatch: 35,
+        locationMatch: 20,
+        seniorityMatch: 20,
+        keywordMatch: 15,
+        sourceQuality: 10,
+      }),
+    },
+    {
+      key: "userPreferences",
+      value: JSON.stringify({
+        defaultView: "list",
+        theme: "light",
+        notificationsEnabled: true,
+        autoScoreOnImport: true,
+        showSalaryEstimates: true,
+      }),
+    },
+  ]);
 }
