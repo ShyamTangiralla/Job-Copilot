@@ -55,6 +55,16 @@ interface AnalyticsData {
   salarySummaryByWorkMode: { mode: string; count: number; avg: number; min: number; max: number }[];
   overallAvgSalary: number | null;
   totalJobsWithSalary: number;
+  salaryDistribution: { label: string; count: number }[];
+  offerVsRange: { company: string; rangeMin: number; rangeMax: number; offered: number | null }[];
+  sourceAnalytics: { source: string; applied: number; interviews: number; offers: number; interviewRate: number; offerRate: number }[];
+  bestSource: { source: string; applied: number; interviews: number; offers: number; interviewRate: number; offerRate: number } | null;
+  versionPerformance: { version: string; applied: number; interviews: number; offers: number; interviewRate: number; offerRate: number; avgAts: number }[];
+  interviewsPerWeek: { week: string; count: number }[];
+  offersPerMonth: { month: string; count: number }[];
+  applicationsByLocation: { location: string; count: number }[];
+  avgDaysAppliedToOffer: number | null;
+  weeklyTrend: { week: string; applications: number; interviews: number }[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -256,14 +266,15 @@ export default function AnalyticsPage() {
       )}
 
       {/* ── Tabs ────────────────────────────────────────────────────────────── */}
-      <Tabs defaultValue="pipeline" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-6">
-          <TabsTrigger value="pipeline" data-testid="tab-pipeline">Pipeline</TabsTrigger>
-          <TabsTrigger value="applications" data-testid="tab-applications">Applications</TabsTrigger>
-          <TabsTrigger value="resume" data-testid="tab-resume">Resume</TabsTrigger>
-          <TabsTrigger value="time" data-testid="tab-time">Time</TabsTrigger>
-          <TabsTrigger value="market" data-testid="tab-market">Job Market</TabsTrigger>
-          <TabsTrigger value="salary" data-testid="tab-salary">Salary</TabsTrigger>
+      <Tabs defaultValue="performance" className="space-y-4">
+        <TabsList className="flex flex-wrap gap-1 h-auto p-1">
+          <TabsTrigger value="performance" data-testid="tab-performance" className="text-xs">Performance</TabsTrigger>
+          <TabsTrigger value="pipeline" data-testid="tab-pipeline" className="text-xs">Pipeline</TabsTrigger>
+          <TabsTrigger value="resume" data-testid="tab-resume" className="text-xs">Resume</TabsTrigger>
+          <TabsTrigger value="sources" data-testid="tab-sources" className="text-xs">Sources</TabsTrigger>
+          <TabsTrigger value="salary" data-testid="tab-salary" className="text-xs">Salary</TabsTrigger>
+          <TabsTrigger value="time" data-testid="tab-time" className="text-xs">Time</TabsTrigger>
+          <TabsTrigger value="market" data-testid="tab-market" className="text-xs">Job Market</TabsTrigger>
         </TabsList>
 
         {/* ════════════════════════════════════════════════════════════════════
@@ -334,175 +345,138 @@ export default function AnalyticsPage() {
         </TabsContent>
 
         {/* ════════════════════════════════════════════════════════════════════
-            TAB 2 — APPLICATION ANALYTICS
+            TAB — JOB SEARCH PERFORMANCE DASHBOARD
         ════════════════════════════════════════════════════════════════════ */}
-        <TabsContent value="applications" className="space-y-4">
-          {isLoading ? SkeletonCards(2, "h-64") : data && (
+        <TabsContent value="performance" className="space-y-4">
+          {isLoading ? SkeletonCards(3, "h-48") : data && (
             <>
-              {/* Row 1: apps/week + interviews/month */}
-              <div className="grid md:grid-cols-2 gap-4">
-                <Card>
-                  <CardHeader className="pb-1 pt-4 px-4">
-                    <CardTitle className="text-sm font-medium">Applications per Week</CardTitle>
-                    <p className="text-xs text-muted-foreground">Last 16 weeks</p>
-                  </CardHeader>
-                  <CardContent className="px-2 pb-4">
-                    <ResponsiveContainer width="100%" height={200}>
-                      <AreaChart data={data.applicationsPerWeek} margin={{ top: 4, right: 12, left: -20, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="appWeekGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
-                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis dataKey="week" tickFormatter={fmtWeek} tick={{ fontSize: 10 }} interval={2} />
-                        <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-                        <Tooltip content={<ChartTooltip />} />
-                        <Area type="monotone" dataKey="count" name="Applications"
-                          stroke="#6366f1" strokeWidth={2} fill="url(#appWeekGrad)" dot={false}
-                          activeDot={{ r: 4, fill: "#6366f1" }} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-1 pt-4 px-4">
-                    <CardTitle className="text-sm font-medium">Interviews per Month</CardTitle>
-                    <p className="text-xs text-muted-foreground">Last 12 months</p>
-                  </CardHeader>
-                  <CardContent className="px-2 pb-4">
-                    <ResponsiveContainer width="100%" height={200}>
-                      <BarChart data={data.interviewsPerMonth} margin={{ top: 4, right: 12, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis dataKey="month" tickFormatter={fmtMonth} tick={{ fontSize: 10 }} interval={1} />
-                        <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-                        <Tooltip content={<ChartTooltip />} labelFormatter={fmtMonth} />
-                        <Bar dataKey="count" name="Interviews" fill="#06b6d4" radius={[3, 3, 0, 0]} barSize={18} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
+              {/* Time metric KPI cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: "Avg Response Time", value: data.avgDaysAppliedToInterview != null ? `${data.avgDaysAppliedToInterview}d` : "—", sub: "Applied → Interview", icon: Clock },
+                  { label: "Avg Time to Interview", value: data.avgDaysPostedToApplied != null ? `${data.avgDaysPostedToApplied}d` : "—", sub: "Posted → Applied", icon: Calendar },
+                  { label: "Avg Time to Offer", value: data.avgDaysAppliedToOffer != null ? `${data.avgDaysAppliedToOffer}d` : "—", sub: "Applied → Offer", icon: Trophy },
+                  { label: "Overall Conversion", value: `${data.conversionRate}%`, sub: "Applied → Interview", icon: TrendingUp },
+                ].map(c => (
+                  <Card key={c.label}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-1">
+                        <span className="text-xs text-muted-foreground font-medium leading-tight">{c.label}</span>
+                        <c.icon className="h-4 w-4 text-primary/60 shrink-0" />
+                      </div>
+                      <p className="text-2xl font-bold">{c.value}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{c.sub}</p>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
 
-              {/* Row 2: by role type + work mode */}
+              {/* Weekly trend: applications + interviews combined */}
+              <Card>
+                <CardHeader className="pb-1 pt-4 px-4">
+                  <CardTitle className="text-sm font-medium">Weekly Activity — Applications vs Interviews</CardTitle>
+                  <p className="text-xs text-muted-foreground">Last 16 weeks</p>
+                </CardHeader>
+                <CardContent className="px-2 pb-4">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart data={data.weeklyTrend} margin={{ top: 4, right: 12, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="appGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
+                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="intGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} />
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="week" tickFormatter={fmtWeek} tick={{ fontSize: 10 }} interval={2} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Legend wrapperStyle={{ fontSize: 10 }} />
+                      <Area type="monotone" dataKey="applications" name="Applications" stroke="#6366f1" fill="url(#appGrad)" strokeWidth={2} dot={false} />
+                      <Area type="monotone" dataKey="interviews" name="Interviews" stroke="#10b981" fill="url(#intGrad)" strokeWidth={2} dot={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              {/* Row: Applications by Role + By Location */}
               <div className="grid md:grid-cols-2 gap-4">
                 <Card>
                   <CardHeader className="pb-1 pt-4 px-4">
-                    <CardTitle className="text-sm font-medium">Applications by Role Type</CardTitle>
-                    <p className="text-xs text-muted-foreground">How your applications break down by role</p>
+                    <CardTitle className="text-sm font-medium">Applications by Role</CardTitle>
                   </CardHeader>
                   <CardContent className="px-2 pb-4">
-                    {data.applicationsByRoleType.length === 0 ? <EmptyChart /> : (
-                      <ResponsiveContainer width="100%" height={Math.max(200, data.applicationsByRoleType.length * 32)}>
-                        <BarChart data={data.applicationsByRoleType} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-                          <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
-                          <YAxis type="category" dataKey="role" tick={{ fontSize: 10 }} width={120} />
-                          <Tooltip content={<ChartTooltip />} />
-                          <Bar dataKey="count" name="Applications" radius={[0, 3, 3, 0]} barSize={14}>
-                            {data.applicationsByRoleType.map((_, i) => (
-                              <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    )}
+                    {data.applicationsByRoleType.length === 0
+                      ? <EmptyChart message="No applications yet" />
+                      : (
+                        <ResponsiveContainer width="100%" height={200}>
+                          <BarChart data={data.applicationsByRoleType} layout="vertical" margin={{ top: 4, right: 16, left: 80, bottom: 4 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                            <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+                            <YAxis type="category" dataKey="role" tick={{ fontSize: 10 }} width={78} />
+                            <Tooltip content={<ChartTooltip />} />
+                            <Bar dataKey="count" name="Applications" radius={[0, 3, 3, 0]}>
+                              {data.applicationsByRoleType.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      )}
                   </CardContent>
                 </Card>
 
                 <Card>
                   <CardHeader className="pb-1 pt-4 px-4">
-                    <CardTitle className="text-sm font-medium">Remote vs Hybrid vs On-site</CardTitle>
-                    <p className="text-xs text-muted-foreground">Work mode breakdown for applied jobs</p>
+                    <CardTitle className="text-sm font-medium">Applications by Location</CardTitle>
                   </CardHeader>
                   <CardContent className="px-4 pb-4">
-                    {data.workModeBreakdown.length === 0 ? <EmptyChart /> : (
-                      <div className="flex items-center gap-4">
-                        <ResponsiveContainer width="55%" height={200}>
-                          <PieChart>
-                            <Pie data={data.workModeBreakdown} dataKey="count" nameKey="mode"
-                              cx="50%" cy="50%" outerRadius={80} innerRadius={44} paddingAngle={2}>
-                              {data.workModeBreakdown.map((d, i) => (
-                                <Cell key={i} fill={WORK_MODE_COLORS[d.mode] ?? PALETTE[i % PALETTE.length]} />
-                              ))}
-                            </Pie>
-                            <Tooltip formatter={(v: number) => [`${v} jobs`, ""]} />
-                          </PieChart>
-                        </ResponsiveContainer>
-                        <div className="flex flex-col gap-2.5 flex-1">
-                          {data.workModeBreakdown.map((d, i) => (
-                            <div key={d.mode} className="flex items-center gap-2">
-                              <div className="h-2.5 w-2.5 rounded-full shrink-0"
-                                style={{ backgroundColor: WORK_MODE_COLORS[d.mode] ?? PALETTE[i % PALETTE.length] }} />
-                              <span className="text-xs text-muted-foreground flex-1">{d.mode}</span>
-                              <span className="text-xs font-semibold">{d.count}</span>
-                              <span className="text-[10px] text-muted-foreground">
-                                {data.totalApplications > 0 ? `${Math.round((d.count / data.totalApplications) * 100)}%` : "0%"}
-                              </span>
-                            </div>
-                          ))}
+                    {data.applicationsByLocation.length === 0
+                      ? <EmptyChart message="No location data yet" />
+                      : (
+                        <div className="space-y-2 mt-1">
+                          {data.applicationsByLocation.map((loc, i) => {
+                            const max = data.applicationsByLocation[0].count;
+                            return (
+                              <div key={loc.location} className="flex items-center gap-2">
+                                <span className="text-[10px] text-muted-foreground w-4 text-right">{i + 1}</span>
+                                <span className="text-xs font-medium w-28 truncate">{loc.location}</span>
+                                <div className="flex-1 bg-muted rounded-full h-1.5">
+                                  <div className="h-full bg-primary rounded-full" style={{ width: `${Math.round((loc.count / max) * 100)}%` }} />
+                                </div>
+                                <span className="text-xs font-semibold w-6 text-right">{loc.count}</span>
+                              </div>
+                            );
+                          })}
                         </div>
-                      </div>
-                    )}
+                      )}
                   </CardContent>
                 </Card>
               </div>
 
-              {/* Row 3: top companies + top titles (applied) */}
-              <div className="grid md:grid-cols-2 gap-4">
-                <Card>
-                  <CardHeader className="pb-1 pt-4 px-4">
-                    <CardTitle className="text-sm font-medium">Applications by Company</CardTitle>
-                    <p className="text-xs text-muted-foreground">Companies you've applied to most</p>
-                  </CardHeader>
-                  <CardContent className="px-2 pb-4">
-                    {data.topCompanies.length === 0 ? <EmptyChart /> : (
-                      <ResponsiveContainer width="100%" height={Math.max(200, data.topCompanies.length * 32)}>
-                        <BarChart data={data.topCompanies} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-                          <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
-                          <YAxis type="category" dataKey="company" tick={{ fontSize: 10 }} width={110} />
-                          <Tooltip content={<ChartTooltip />} />
-                          <Bar dataKey="count" name="Applications" radius={[0, 3, 3, 0]} barSize={12}>
-                            {data.topCompanies.map((_, i) => (
-                              <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-1 pt-4 px-4">
-                    <CardTitle className="text-sm font-medium">Applications by Job Title</CardTitle>
-                    <p className="text-xs text-muted-foreground">Job titles you've applied to most</p>
-                  </CardHeader>
-                  <CardContent className="px-2 pb-4">
-                    {data.topTitles.length === 0 ? <EmptyChart /> : (
-                      <ResponsiveContainer width="100%" height={Math.max(200, data.topTitles.length * 32)}>
-                        <BarChart data={data.topTitles} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-                          <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
-                          <YAxis type="category" dataKey="title" tick={{ fontSize: 10 }} width={130} />
-                          <Tooltip content={<ChartTooltip />} />
-                          <Bar dataKey="count" name="Applications" radius={[0, 3, 3, 0]} barSize={12}>
-                            {data.topTitles.map((_, i) => (
-                              <Cell key={i} fill={PALETTE[(i + 4) % PALETTE.length]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
+              {/* Offers per month */}
+              <Card>
+                <CardHeader className="pb-1 pt-4 px-4">
+                  <CardTitle className="text-sm font-medium">Offers per Month</CardTitle>
+                  <p className="text-xs text-muted-foreground">Last 12 months</p>
+                </CardHeader>
+                <CardContent className="px-2 pb-4">
+                  <ResponsiveContainer width="100%" height={160}>
+                    <BarChart data={data.offersPerMonth} margin={{ top: 4, right: 16, left: -20, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="month" tickFormatter={fmtMonth} tick={{ fontSize: 10 }} interval={1} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Bar dataKey="count" name="Offers" fill="hsl(142, 71%, 45%)" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
             </>
           )}
         </TabsContent>
+
 
         {/* ════════════════════════════════════════════════════════════════════
             TAB 3 — RESUME PERFORMANCE
@@ -634,6 +608,54 @@ export default function AnalyticsPage() {
                 </CardContent>
               </Card>
 
+              {/* Version performance detail table */}
+              {data.versionPerformance.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <CardTitle className="text-sm font-medium">Resume Version Performance Detail</CardTitle>
+                    <p className="text-xs text-muted-foreground">Applications, interviews, and offers per version</p>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-border/50">
+                            <th className="text-left py-2 text-muted-foreground font-medium">Version</th>
+                            <th className="text-right py-2 text-muted-foreground font-medium">Applied</th>
+                            <th className="text-right py-2 text-muted-foreground font-medium">Interviews</th>
+                            <th className="text-right py-2 text-muted-foreground font-medium">Offers</th>
+                            <th className="text-right py-2 text-muted-foreground font-medium">Int. Rate</th>
+                            <th className="text-right py-2 text-muted-foreground font-medium">Offer Rate</th>
+                            <th className="text-right py-2 text-muted-foreground font-medium">Avg ATS</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.versionPerformance.map((v, i) => (
+                            <tr key={i} className="border-b border-border/30 hover:bg-muted/30" data-testid={`row-version-${i}`}>
+                              <td className="py-2 font-medium max-w-[200px] truncate">{v.version}</td>
+                              <td className="text-right py-2">{v.applied}</td>
+                              <td className="text-right py-2">{v.interviews}</td>
+                              <td className="text-right py-2">{v.offers}</td>
+                              <td className="text-right py-2">
+                                <span className={`font-medium ${v.interviewRate >= data.conversionRate ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600"}`}>
+                                  {v.interviewRate}%
+                                </span>
+                              </td>
+                              <td className="text-right py-2">
+                                <span className={`font-medium ${v.offerRate > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
+                                  {v.offerRate}%
+                                </span>
+                              </td>
+                              <td className="text-right py-2">{v.avgAts > 0 ? `${v.avgAts}%` : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* ATS before/after improvement */}
               <Card>
                 <CardHeader className="pb-1 pt-4 px-4">
@@ -655,6 +677,137 @@ export default function AnalyticsPage() {
                           <Bar dataKey="after" name="After" fill="#10b981" radius={[0, 2, 2, 0]} barSize={8} />
                         </BarChart>
                       </ResponsiveContainer>
+                    )}
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </TabsContent>
+
+        {/* ════════════════════════════════════════════════════════════════════
+            TAB — SOURCE ANALYTICS
+        ════════════════════════════════════════════════════════════════════ */}
+        <TabsContent value="sources" className="space-y-4">
+          {isLoading ? SkeletonCards(3, "h-48") : data && (
+            <>
+              {/* Best source highlight */}
+              {data.bestSource && (
+                <Card className="border-emerald-400/40 bg-emerald-50/50 dark:bg-emerald-950/20">
+                  <CardContent className="p-4 flex items-center gap-4">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 shrink-0">
+                      <Award className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-muted-foreground font-medium">Best Performing Source</p>
+                      <p className="font-semibold text-sm">{data.bestSource.source}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {data.bestSource.applied} applications · {data.bestSource.interviews} interviews · {data.bestSource.offers} offers
+                      </p>
+                    </div>
+                    <Badge className="text-sm font-bold px-3 py-1 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border-0">
+                      {data.bestSource.interviewRate}% interview rate
+                    </Badge>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Applications by source bar chart */}
+              <Card>
+                <CardHeader className="pb-1 pt-4 px-4">
+                  <CardTitle className="text-sm font-medium">Applications by Source</CardTitle>
+                  <p className="text-xs text-muted-foreground">Where your applications are coming from</p>
+                </CardHeader>
+                <CardContent className="px-2 pb-4">
+                  {data.sourceAnalytics.length === 0
+                    ? <EmptyChart message="No application source data yet" />
+                    : (
+                      <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={data.sourceAnalytics} margin={{ top: 4, right: 16, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                          <XAxis dataKey="source" tick={{ fontSize: 10 }} />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                          <Tooltip content={<ChartTooltip />} />
+                          <Legend wrapperStyle={{ fontSize: 10 }} />
+                          <Bar dataKey="applied" name="Applied" fill="#6366f1" radius={[3, 3, 0, 0]} />
+                          <Bar dataKey="interviews" name="Interviews" fill="#10b981" radius={[3, 3, 0, 0]} />
+                          <Bar dataKey="offers" name="Offers" fill="#f59e0b" radius={[3, 3, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                </CardContent>
+              </Card>
+
+              {/* Conversion rate by source */}
+              <Card>
+                <CardHeader className="pb-1 pt-4 px-4">
+                  <CardTitle className="text-sm font-medium">Interview Rate by Source</CardTitle>
+                  <p className="text-xs text-muted-foreground">% of applications that led to an interview</p>
+                </CardHeader>
+                <CardContent className="px-2 pb-4">
+                  {data.sourceAnalytics.length === 0
+                    ? <EmptyChart message="No source data yet" />
+                    : (
+                      <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={[...data.sourceAnalytics].sort((a, b) => b.interviewRate - a.interviewRate)}
+                          margin={{ top: 4, right: 16, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                          <XAxis dataKey="source" tick={{ fontSize: 10 }} />
+                          <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} />
+                          <Tooltip content={<ChartTooltip />} formatter={(v: any) => [`${v}%`, "Interview rate"]} />
+                          <Bar dataKey="interviewRate" name="Interview rate %" radius={[3, 3, 0, 0]}>
+                            {[...data.sourceAnalytics].sort((a, b) => b.interviewRate - a.interviewRate).map((_, i) => (
+                              <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                </CardContent>
+              </Card>
+
+              {/* Source performance table */}
+              <Card>
+                <CardHeader className="pb-1 pt-4 px-4">
+                  <CardTitle className="text-sm font-medium">Source Performance Summary</CardTitle>
+                </CardHeader>
+                <CardContent className="px-4 pb-4">
+                  {data.sourceAnalytics.length === 0
+                    ? <EmptyChart message="No source data yet" />
+                    : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-border/50">
+                              <th className="text-left py-2 text-muted-foreground font-medium">Source</th>
+                              <th className="text-right py-2 text-muted-foreground font-medium">Applied</th>
+                              <th className="text-right py-2 text-muted-foreground font-medium">Interviews</th>
+                              <th className="text-right py-2 text-muted-foreground font-medium">Offers</th>
+                              <th className="text-right py-2 text-muted-foreground font-medium">Int. Rate</th>
+                              <th className="text-right py-2 text-muted-foreground font-medium">Offer Rate</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {data.sourceAnalytics.map((s, i) => (
+                              <tr key={s.source} className="border-b border-border/30 hover:bg-muted/30" data-testid={`row-source-${i}`}>
+                                <td className="py-2 font-medium">{s.source}</td>
+                                <td className="text-right py-2">{s.applied}</td>
+                                <td className="text-right py-2">{s.interviews}</td>
+                                <td className="text-right py-2">{s.offers}</td>
+                                <td className="text-right py-2">
+                                  <span className={`font-medium ${s.interviewRate >= 20 ? "text-emerald-600 dark:text-emerald-400" : s.interviewRate >= 10 ? "text-amber-600" : "text-muted-foreground"}`}>
+                                    {s.interviewRate}%
+                                  </span>
+                                </td>
+                                <td className="text-right py-2">
+                                  <span className={`font-medium ${s.offerRate >= 5 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
+                                    {s.offerRate}%
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                 </CardContent>
               </Card>
@@ -1046,6 +1199,57 @@ export default function AnalyticsPage() {
                         );
                       })}
                     </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Salary distribution histogram */}
+              {data.salaryDistribution.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <CardTitle className="text-sm font-medium">Salary Distribution</CardTitle>
+                    <p className="text-xs text-muted-foreground">How salary ranges cluster across your applications</p>
+                  </CardHeader>
+                  <CardContent className="px-2 pb-4">
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={data.salaryDistribution} margin={{ top: 4, right: 16, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                        <Tooltip content={<ChartTooltip />} />
+                        <Bar dataKey="count" name="Jobs" radius={[3, 3, 0, 0]}>
+                          {data.salaryDistribution.map((_, i) => (
+                            <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Offer vs Range: did your offers beat the market? */}
+              {data.offerVsRange.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <CardTitle className="text-sm font-medium">Offer Amount vs Job Salary Range</CardTitle>
+                    <p className="text-xs text-muted-foreground">
+                      How your received offer compares to the posted salary range (top = market max)
+                    </p>
+                  </CardHeader>
+                  <CardContent className="px-2 pb-4">
+                    <ResponsiveContainer width="100%" height={Math.max(200, data.offerVsRange.length * 36)}>
+                      <BarChart data={data.offerVsRange} layout="vertical" margin={{ top: 4, right: 72, left: 8, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `$${Math.round(v / 1000)}k`} />
+                        <YAxis type="category" dataKey="company" tick={{ fontSize: 9 }} width={90} />
+                        <Tooltip content={<ChartTooltip />} formatter={(v: any) => [`$${Math.round(Number(v) / 1000)}k`]} />
+                        <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
+                        <Bar dataKey="rangeMin" name="Posted Min" fill="#94a3b8" radius={[0, 0, 0, 0]} barSize={10} />
+                        <Bar dataKey="rangeMax" name="Posted Max" fill="#cbd5e1" radius={[0, 0, 0, 0]} barSize={10} />
+                        <Bar dataKey="offered" name="Offer Amount" fill="#10b981" radius={[0, 3, 3, 0]} barSize={10} />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </CardContent>
                 </Card>
               )}

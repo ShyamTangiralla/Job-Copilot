@@ -2278,6 +2278,130 @@ export async function registerRoutes(
         return entry;
       });
 
+      // ── Source Analytics ──────────────────────────────────────────────────────
+      const sourceMap: Record<string, { applied: number; interviews: number; offers: number }> = {};
+      for (const j of applied) {
+        const src = (j.source || "Unknown").trim();
+        if (!sourceMap[src]) sourceMap[src] = { applied: 0, interviews: 0, offers: 0 };
+        sourceMap[src].applied++;
+        if (INTERVIEW_STATUSES.has(j.status)) sourceMap[src].interviews++;
+        if (j.status === "Offer") sourceMap[src].offers++;
+      }
+      const sourceAnalytics = Object.entries(sourceMap)
+        .map(([source, v]) => ({
+          source,
+          applied: v.applied,
+          interviews: v.interviews,
+          offers: v.offers,
+          interviewRate: v.applied > 0 ? Math.round((v.interviews / v.applied) * 100) : 0,
+          offerRate: v.applied > 0 ? Math.round((v.offers / v.applied) * 100) : 0,
+        }))
+        .sort((a, b) => b.applied - a.applied);
+      const bestSource = sourceAnalytics.length > 0
+        ? [...sourceAnalytics].sort((a, b) => b.interviewRate - a.interviewRate)[0]
+        : null;
+
+      // ── Enhanced Resume Version Performance (with offers) ────────────────────
+      const versionMapFull: Record<number, { label: string; applied: number; interviews: number; offers: number; ats: number[] }> = {};
+      for (const j of applied) {
+        if (!j.resumeVersionId) continue;
+        if (!versionMapFull[j.resumeVersionId]) {
+          const v = allVersions.find(v => v.id === j.resumeVersionId);
+          versionMapFull[j.resumeVersionId] = {
+            label: v ? `${v.versionLabel} — ${v.jobTitle || v.company || "?"}` : `v#${j.resumeVersionId}`,
+            applied: 0,
+            interviews: 0,
+            offers: 0,
+            ats: [],
+          };
+        }
+        versionMapFull[j.resumeVersionId].applied++;
+        if (INTERVIEW_STATUSES.has(j.status)) versionMapFull[j.resumeVersionId].interviews++;
+        if (j.status === "Offer") versionMapFull[j.resumeVersionId].offers++;
+        if (j.atsScoreAtApply && j.atsScoreAtApply > 0) versionMapFull[j.resumeVersionId].ats.push(j.atsScoreAtApply);
+      }
+      const versionPerformance = Object.values(versionMapFull).map(v => ({
+        version: v.label,
+        applied: v.applied,
+        interviews: v.interviews,
+        offers: v.offers,
+        interviewRate: v.applied > 0 ? Math.round((v.interviews / v.applied) * 100) : 0,
+        offerRate: v.applied > 0 ? Math.round((v.offers / v.applied) * 100) : 0,
+        avgAts: v.ats.length > 0 ? Math.round(v.ats.reduce((a, b) => a + b, 0) / v.ats.length) : 0,
+      })).sort((a, b) => b.interviewRate - a.interviewRate).slice(0, 10);
+
+      // ── Interviews per week (last 16 weeks) ───────────────────────────────────
+      const interviewWeekMap: Record<string, number> = {};
+      for (let w = 15; w >= 0; w--) {
+        const d = new Date();
+        d.setDate(d.getDate() - w * 7);
+        const mon = new Date(d);
+        mon.setDate(d.getDate() - d.getDay() + 1);
+        const key = mon.toISOString().split("T")[0];
+        interviewWeekMap[key] = 0;
+      }
+      for (const j of interviews) {
+        const dateStr = j.interviewDate ?? j.dateApplied;
+        if (!dateStr) continue;
+        const d = new Date(dateStr);
+        const mon = new Date(d);
+        mon.setDate(d.getDate() - d.getDay() + 1);
+        const key = mon.toISOString().split("T")[0];
+        if (key in interviewWeekMap) interviewWeekMap[key]++;
+      }
+      const interviewsPerWeek = Object.entries(interviewWeekMap)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([week, count]) => ({ week, count }));
+
+      // ── Offers per month (last 12 months) ────────────────────────────────────
+      const offerMonthMap: Record<string, number> = {};
+      for (let m = 11; m >= 0; m--) {
+        const d = new Date();
+        d.setDate(1);
+        d.setMonth(d.getMonth() - m);
+        offerMonthMap[d.toISOString().slice(0, 7)] = 0;
+      }
+      for (const j of allJobs.filter(j => j.status === "Offer")) {
+        const dateStr = (j as any).offerDate ?? j.dateApplied;
+        if (!dateStr) continue;
+        const key = new Date(dateStr).toISOString().slice(0, 7);
+        if (key in offerMonthMap) offerMonthMap[key]++;
+      }
+      const offersPerMonth = Object.entries(offerMonthMap)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([month, count]) => ({ month, count }));
+
+      // ── Applications by location (applied jobs) ───────────────────────────────
+      const locationMap: Record<string, number> = {};
+      for (const j of applied) {
+        const loc = j.location ? j.location.split(",")[0].trim() : "Unknown";
+        locationMap[loc] = (locationMap[loc] ?? 0) + 1;
+      }
+      const applicationsByLocation = Object.entries(locationMap)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 12)
+        .map(([location, count]) => ({ location, count }));
+
+      // ── Avg days applied → offer ──────────────────────────────────────────────
+      const appliedToOffer: number[] = [];
+      for (const j of allJobs.filter(j => j.status === "Offer")) {
+        const offerDate = (j as any).offerDate;
+        if (j.dateApplied && offerDate) {
+          const days = (new Date(offerDate).getTime() - new Date(j.dateApplied).getTime()) / 86400000;
+          if (days >= 0 && days < 365) appliedToOffer.push(days);
+        }
+      }
+      const avgDaysAppliedToOffer = appliedToOffer.length > 0
+        ? Math.round(appliedToOffer.reduce((a, b) => a + b, 0) / appliedToOffer.length)
+        : null;
+
+      // ── Combined weekly trends (apps + interviews on same chart) ──────────────
+      const weeklyTrend = applicationsPerWeek.map((w, i) => ({
+        week: w.week,
+        applications: w.count,
+        interviews: interviewsPerWeek[i]?.count ?? 0,
+      }));
+
       // ── Salary Analytics ──────────────────────────────────────────────────────
       const parseSalaryFromText = (text: string): { min: number | null; max: number | null } => {
         if (!text) return { min: null, max: null };
@@ -2363,6 +2487,50 @@ export async function registerRoutes(
       const overallAvgSalary = allSalaryMids.length > 0
         ? Math.round(allSalaryMids.reduce((a, b) => a + b, 0) / allSalaryMids.length) : null;
 
+      // ── Salary Distribution (histogram) ──────────────────────────────────────
+      const salaryDistBins = [
+        { label: "<$40k", min: 0, max: 40000 },
+        { label: "$40-60k", min: 40000, max: 60000 },
+        { label: "$60-80k", min: 60000, max: 80000 },
+        { label: "$80-100k", min: 80000, max: 100000 },
+        { label: "$100-120k", min: 100000, max: 120000 },
+        { label: "$120-150k", min: 120000, max: 150000 },
+        { label: "$150-200k", min: 150000, max: 200000 },
+        { label: ">$200k", min: 200000, max: Infinity },
+      ];
+      const salaryDistribution = salaryDistBins.map(bin => {
+        let count = 0;
+        for (const j of allJobs) {
+          let minVal = j.salaryMin ?? 0;
+          let maxVal = j.salaryMax ?? 0;
+          if (!minVal && !maxVal && j.description) {
+            const parsed = parseSalaryFromText(serverStripHtml(j.description));
+            minVal = parsed.min ?? 0;
+            maxVal = parsed.max ?? 0;
+          }
+          if (!minVal && !maxVal) continue;
+          const mid = minVal && maxVal ? (minVal + maxVal) / 2 : (minVal || maxVal);
+          if (mid >= bin.min && mid < bin.max) count++;
+        }
+        return { label: bin.label, count };
+      });
+
+      // ── Offer salary vs expected range ────────────────────────────────────────
+      const offerVsRange = allJobs
+        .filter(j => j.status === "Offer" && ((j as any).offerSalary || j.salaryMin || j.salaryMax))
+        .map(j => {
+          const offerRaw = (j as any).offerSalary ?? "";
+          const offered = offerRaw ? parseFloat(offerRaw.replace(/[^0-9.]/g, "")) * (offerRaw.toLowerCase().includes("k") ? 1000 : 1) : null;
+          return {
+            company: j.company,
+            rangeMin: j.salaryMin ?? 0,
+            rangeMax: j.salaryMax ?? 0,
+            offered: offered && offered > 10000 && offered < 2000000 ? Math.round(offered) : null,
+          };
+        })
+        .filter(d => d.rangeMin || d.rangeMax || d.offered)
+        .slice(0, 10);
+
       res.json({
         totalJobsScraped,
         totalJobsImported,
@@ -2404,6 +2572,16 @@ export async function registerRoutes(
         salarySummaryByWorkMode,
         overallAvgSalary,
         totalJobsWithSalary: Object.values(salaryByRole).flat().length,
+        salaryDistribution,
+        offerVsRange,
+        sourceAnalytics,
+        bestSource,
+        versionPerformance,
+        interviewsPerWeek,
+        offersPerMonth,
+        applicationsByLocation,
+        avgDaysAppliedToOffer,
+        weeklyTrend,
       });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
