@@ -64,6 +64,8 @@ interface AnalyticsData {
   offersPerMonth: { month: string; count: number }[];
   applicationsByLocation: { location: string; count: number }[];
   avgDaysAppliedToOffer: number | null;
+  avgDaysAppliedToRecruiterContact: number | null;
+  avgTotalHiringTimeline: number | null;
   weeklyTrend: { week: string; applications: number; interviews: number }[];
 }
 
@@ -353,10 +355,10 @@ export default function AnalyticsPage() {
               {/* Time metric KPI cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
-                  { label: "Avg Response Time", value: data.avgDaysAppliedToInterview != null ? `${data.avgDaysAppliedToInterview}d` : "—", sub: "Applied → Interview", icon: Clock },
-                  { label: "Avg Time to Interview", value: data.avgDaysPostedToApplied != null ? `${data.avgDaysPostedToApplied}d` : "—", sub: "Posted → Applied", icon: Calendar },
-                  { label: "Avg Time to Offer", value: data.avgDaysAppliedToOffer != null ? `${data.avgDaysAppliedToOffer}d` : "—", sub: "Applied → Offer", icon: Trophy },
-                  { label: "Overall Conversion", value: `${data.conversionRate}%`, sub: "Applied → Interview", icon: TrendingUp },
+                  { label: "Avg Recruiter Response", value: data.avgDaysAppliedToRecruiterContact != null ? `${data.avgDaysAppliedToRecruiterContact}d` : "—", sub: "Applied → Recruiter Contact", icon: Clock },
+                  { label: "Avg Days to Interview", value: data.avgDaysAppliedToInterview != null ? `${data.avgDaysAppliedToInterview}d` : "—", sub: "Applied → Interview", icon: Calendar },
+                  { label: "Avg Days to Offer", value: data.avgDaysAppliedToOffer != null ? `${data.avgDaysAppliedToOffer}d` : "—", sub: "Applied → Offer", icon: Trophy },
+                  { label: "Avg Total Timeline", value: data.avgTotalHiringTimeline != null ? `${data.avgTotalHiringTimeline}d` : `${data.conversionRate}%`, sub: data.avgTotalHiringTimeline != null ? "Applied → Decision" : "Interview conversion", icon: TrendingUp },
                 ].map(c => (
                   <Card key={c.label}>
                     <CardContent className="p-4">
@@ -834,6 +836,17 @@ export default function AnalyticsPage() {
                   iconColor="text-amber-600" bg="bg-amber-100 dark:bg-amber-950/50"
                 />
                 <TimeCard
+                  label="Avg Days: Applied → Recruiter"
+                  value={data.avgDaysAppliedToRecruiterContact != null ? `${data.avgDaysAppliedToRecruiterContact}d` : "—"}
+                  sub={data.avgDaysAppliedToRecruiterContact != null
+                    ? data.avgDaysAppliedToRecruiterContact <= 3 ? "Very fast response"
+                      : data.avgDaysAppliedToRecruiterContact <= 7 ? "Quick turnaround"
+                      : data.avgDaysAppliedToRecruiterContact <= 14 ? "Average response time"
+                      : "Slower response — follow up"
+                    : "Log recruiter contact dates to compute"}
+                  iconColor="text-purple-600" bg="bg-purple-100 dark:bg-purple-950/50"
+                />
+                <TimeCard
                   label="Avg Days: Applied → Interview"
                   value={data.avgDaysAppliedToInterview != null ? `${data.avgDaysAppliedToInterview}d` : "—"}
                   sub={data.avgDaysAppliedToInterview != null
@@ -842,6 +855,26 @@ export default function AnalyticsPage() {
                       : "Longer hiring process"
                     : "No interview data yet"}
                   iconColor="text-cyan-600" bg="bg-cyan-100 dark:bg-cyan-950/50"
+                />
+                <TimeCard
+                  label="Avg Days: Applied → Offer"
+                  value={data.avgDaysAppliedToOffer != null ? `${data.avgDaysAppliedToOffer}d` : "—"}
+                  sub={data.avgDaysAppliedToOffer != null
+                    ? data.avgDaysAppliedToOffer <= 14 ? "Fast-moving company"
+                      : data.avgDaysAppliedToOffer <= 30 ? "Standard hiring cycle"
+                      : "Extended process"
+                    : "No offer data yet"}
+                  iconColor="text-emerald-600" bg="bg-emerald-100 dark:bg-emerald-950/50"
+                />
+                <TimeCard
+                  label="Avg Total Hiring Timeline"
+                  value={data.avgTotalHiringTimeline != null ? `${data.avgTotalHiringTimeline}d` : "—"}
+                  sub={data.avgTotalHiringTimeline != null
+                    ? data.avgTotalHiringTimeline <= 21 ? "Fast hiring cycle"
+                      : data.avgTotalHiringTimeline <= 45 ? "Typical timeline"
+                      : "Long process — plan ahead"
+                    : "Log decision dates to compute"}
+                  iconColor="text-indigo-600" bg="bg-indigo-100 dark:bg-indigo-950/50"
                 />
                 <TimeCard
                   label="Avg Days Between Applications"

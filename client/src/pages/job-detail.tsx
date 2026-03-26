@@ -663,6 +663,8 @@ export default function JobDetail() {
   const [offerNotes, setOfferNotes] = useState("");
   const [salaryMin, setSalaryMin] = useState("");
   const [salaryMax, setSalaryMax] = useState("");
+  const [recruiterContactDate, setRecruiterContactDate] = useState("");
+  const [decisionDate, setDecisionDate] = useState("");
 
   // Structured note texts by type
   const [noteTexts, setNoteTexts] = useState<Record<string, string>>({
@@ -773,6 +775,8 @@ export default function JobDetail() {
       setOfferNotes((job as any).offerNotes ?? "");
       setSalaryMin((job as any).salaryMin?.toString() ?? "");
       setSalaryMax((job as any).salaryMax?.toString() ?? "");
+      setRecruiterContactDate((job as any).recruiterContactDate ?? "");
+      setDecisionDate((job as any).decisionDate ?? "");
     }
   }, [job]);
 
@@ -1116,6 +1120,36 @@ export default function JobDetail() {
                   />
                 </div>
                 <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Recruiter Contact Date</Label>
+                  <Input
+                    type="date"
+                    value={recruiterContactDate}
+                    onChange={(e) => setRecruiterContactDate(e.target.value)}
+                    onBlur={() => {
+                      if (recruiterContactDate !== ((job as any).recruiterContactDate ?? "")) {
+                        updateJob.mutate({ recruiterContactDate });
+                      }
+                    }}
+                    className="h-8 text-xs"
+                    data-testid="input-recruiter-contact-date"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Decision Date</Label>
+                  <Input
+                    type="date"
+                    value={decisionDate}
+                    onChange={(e) => setDecisionDate(e.target.value)}
+                    onBlur={() => {
+                      if (decisionDate !== ((job as any).decisionDate ?? "")) {
+                        updateJob.mutate({ decisionDate });
+                      }
+                    }}
+                    className="h-8 text-xs"
+                    data-testid="input-decision-date"
+                  />
+                </div>
+                <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Follow-up Date</Label>
                   <Input
                     type="date"
@@ -1202,6 +1236,146 @@ export default function JobDetail() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Hiring Timeline Card */}
+          {(() => {
+            const appliedStr = (job as any).dateApplied ?? "";
+            const recruiterStr = (job as any).recruiterContactDate ?? "";
+            const interviewStr = (job as any).interviewDate ?? "";
+            const offerStr = (job as any).offerDate ?? "";
+            const decisionStr = (job as any).decisionDate ?? "";
+
+            const toD = (s: string): Date | null => s ? new Date(s + "T00:00:00") : null;
+            const diffDays = (a: Date | null, b: Date | null): number | null =>
+              a && b ? Math.round((b.getTime() - a.getTime()) / 86400000) : null;
+            const fmt = (s: string) =>
+              s ? new Date(s + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null;
+
+            const dApplied = toD(appliedStr);
+            const daysToInterview = diffDays(dApplied, toD(interviewStr));
+            const daysToOffer = diffDays(dApplied, toD(offerStr));
+            const daysToDecision = diffDays(dApplied, toD(decisionStr));
+
+            const milestones = [
+              { key: "applied", label: "Applied", icon: "send", dateStr: appliedStr, color: "#6366f1" },
+              { key: "recruiter", label: "Recruiter Contact", icon: "phone", dateStr: recruiterStr, color: "#8b5cf6" },
+              { key: "interview", label: "Interview", icon: "users", dateStr: interviewStr, color: "#0ea5e9" },
+              { key: "offer", label: "Offer Received", icon: "trophy", dateStr: offerStr, color: "#10b981" },
+              { key: "decision", label: "Decision Made", icon: "flag", dateStr: decisionStr, color: "#f59e0b" },
+            ];
+
+            const hasAnyDate = milestones.some(m => m.dateStr);
+            if (!hasAnyDate) return null;
+
+            return (
+              <Card data-testid="card-hiring-timeline">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base font-medium flex items-center gap-1.5">
+                    <History className="h-4 w-4" />
+                    Hiring Timeline
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Visual timeline */}
+                  <div className="relative">
+                    {milestones.map((m, i) => {
+                      const isLast = i === milestones.length - 1;
+                      const done = !!m.dateStr;
+                      const gapDays = i > 0
+                        ? diffDays(toD(milestones[i - 1].dateStr), toD(m.dateStr))
+                        : null;
+
+                      return (
+                        <div key={m.key} className="flex gap-3 relative">
+                          {/* Dot + line */}
+                          <div className="flex flex-col items-center" style={{ minWidth: 20 }}>
+                            <div
+                              className="h-4 w-4 rounded-full border-2 shrink-0 z-10"
+                              style={{
+                                backgroundColor: done ? m.color : "hsl(var(--muted))",
+                                borderColor: done ? m.color : "hsl(var(--border))",
+                              }}
+                              data-testid={`dot-timeline-${m.key}`}
+                            />
+                            {!isLast && (
+                              <div
+                                className="w-0.5 flex-1 mt-0.5 mb-0.5"
+                                style={{
+                                  minHeight: 28,
+                                  backgroundColor: done && !!milestones[i + 1].dateStr
+                                    ? m.color
+                                    : "hsl(var(--border))",
+                                  opacity: done ? 0.5 : 0.3,
+                                }}
+                              />
+                            )}
+                          </div>
+
+                          {/* Content */}
+                          <div className={`pb-4 flex-1 ${isLast ? "pb-0" : ""}`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className={`text-xs font-semibold leading-tight ${done ? "" : "text-muted-foreground"}`}>
+                                  {m.label}
+                                </p>
+                                {done
+                                  ? <p className="text-[11px] text-muted-foreground mt-0.5" data-testid={`text-timeline-date-${m.key}`}>{fmt(m.dateStr)}</p>
+                                  : <p className="text-[11px] text-muted-foreground/50 mt-0.5 italic">Not recorded</p>
+                                }
+                              </div>
+                              {gapDays !== null && (
+                                <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground shrink-0 mt-0.5" data-testid={`text-gap-${m.key}`}>
+                                  +{gapDays}d
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Metrics summary */}
+                  {(daysToInterview !== null || daysToOffer !== null || daysToDecision !== null) && (
+                    <div className="border-t border-border/50 pt-3 grid grid-cols-1 gap-2">
+                      {daysToInterview !== null && (
+                        <div className="flex items-center justify-between text-xs" data-testid="text-days-to-interview">
+                          <span className="text-muted-foreground">Days Applied → Interview</span>
+                          <span className="font-semibold tabular-nums">
+                            {daysToInterview === 0 ? "Same day" : `${daysToInterview} day${daysToInterview !== 1 ? "s" : ""}`}
+                          </span>
+                        </div>
+                      )}
+                      {daysToOffer !== null && (
+                        <div className="flex items-center justify-between text-xs" data-testid="text-days-to-offer">
+                          <span className="text-muted-foreground">Days Applied → Offer</span>
+                          <span className="font-semibold tabular-nums">
+                            {daysToOffer === 0 ? "Same day" : `${daysToOffer} day${daysToOffer !== 1 ? "s" : ""}`}
+                          </span>
+                        </div>
+                      )}
+                      {daysToDecision !== null && (
+                        <div className="flex items-center justify-between text-xs" data-testid="text-days-to-decision">
+                          <span className="text-muted-foreground">Total Hiring Timeline</span>
+                          <span className="font-semibold tabular-nums">
+                            {daysToDecision === 0 ? "Same day" : `${daysToDecision} day${daysToDecision !== 1 ? "s" : ""}`}
+                          </span>
+                        </div>
+                      )}
+                      {daysToInterview === null && dApplied && (
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Days since applied</span>
+                          <span className="font-semibold tabular-nums">
+                            {diffDays(dApplied, new Date())} days
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           {/* Offer Details — shown only when status is Offer */}
           {job.status === "Offer" && (

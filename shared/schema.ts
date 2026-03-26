@@ -89,6 +89,8 @@ export const jobs = pgTable("jobs", {
   salaryMin: integer("salary_min"),
   salaryMax: integer("salary_max"),
   salaryCurrency: text("salary_currency").notNull().default("USD"),
+  recruiterContactDate: text("recruiter_contact_date").notNull().default(""),
+  decisionDate: text("decision_date").notNull().default(""),
 });
 
 export const insertJobSchema = createInsertSchema(jobs).omit({ id: true, createdAt: true });

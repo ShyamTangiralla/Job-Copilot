@@ -2395,6 +2395,32 @@ export async function registerRoutes(
         ? Math.round(appliedToOffer.reduce((a, b) => a + b, 0) / appliedToOffer.length)
         : null;
 
+      // ── Avg days applied → recruiter contact ────────────────────────────────
+      const appliedToRecruiter: number[] = [];
+      for (const j of allJobs) {
+        const rc = (j as any).recruiterContactDate;
+        if (j.dateApplied && rc) {
+          const days = (new Date(rc).getTime() - new Date(j.dateApplied).getTime()) / 86400000;
+          if (days >= 0 && days < 365) appliedToRecruiter.push(days);
+        }
+      }
+      const avgDaysAppliedToRecruiterContact = appliedToRecruiter.length > 0
+        ? Math.round(appliedToRecruiter.reduce((a, b) => a + b, 0) / appliedToRecruiter.length)
+        : null;
+
+      // ── Avg total hiring timeline (applied → decision) ───────────────────────
+      const appliedToDecision: number[] = [];
+      for (const j of allJobs) {
+        const dd = (j as any).decisionDate;
+        if (j.dateApplied && dd) {
+          const days = (new Date(dd).getTime() - new Date(j.dateApplied).getTime()) / 86400000;
+          if (days >= 0 && days < 730) appliedToDecision.push(days);
+        }
+      }
+      const avgTotalHiringTimeline = appliedToDecision.length > 0
+        ? Math.round(appliedToDecision.reduce((a, b) => a + b, 0) / appliedToDecision.length)
+        : null;
+
       // ── Combined weekly trends (apps + interviews on same chart) ──────────────
       const weeklyTrend = applicationsPerWeek.map((w, i) => ({
         week: w.week,
@@ -2581,6 +2607,8 @@ export async function registerRoutes(
         offersPerMonth,
         applicationsByLocation,
         avgDaysAppliedToOffer,
+        avgDaysAppliedToRecruiterContact,
+        avgTotalHiringTimeline,
         weeklyTrend,
       });
     } catch (e: any) {
