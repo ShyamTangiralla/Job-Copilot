@@ -191,8 +191,8 @@ export default function Tracker() {
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold" data-testid="text-page-title">Tracker</h1>
-          <p className="text-sm text-muted-foreground mt-1">Track your application progress and pipeline.</p>
+          <h1 className="text-2xl font-semibold" data-testid="text-page-title">Pipeline</h1>
+          <p className="text-sm text-muted-foreground mt-1">Track and manage your application pipeline in one view.</p>
         </div>
         <Button variant="secondary" onClick={exportCSV} data-testid="button-export-csv">
           <Download className="h-4 w-4 mr-1" />

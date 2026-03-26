@@ -174,10 +174,7 @@ export default function InterviewsPage() {
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
-          <MessageSquare className="h-6 w-6 text-primary" />
-          Interview Tracker
-        </h1>
+        <h1 className="text-2xl font-semibold" data-testid="text-page-title">Interview Tracker</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Track every interview round, result, and notes in one place.
         </p>

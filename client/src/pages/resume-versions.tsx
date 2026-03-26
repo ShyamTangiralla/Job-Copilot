@@ -31,7 +31,7 @@ function fmt(date: string | Date) {
 }
 
 function ScoreBadge({ score, label }: { score: number; label?: string }) {
-  const color = score >= 80 ? "bg-green-100 text-green-800" : score >= 60 ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800";
+  const color = score >= 80 ? "bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-300" : score >= 60 ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-950/50 dark:text-yellow-300" : "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300";
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
       {label && <span className="text-[10px] opacity-70">{label}</span>}
@@ -213,10 +213,7 @@ export default function ResumeVersionsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
-            <History className="h-6 w-6 text-primary" />
-            Resume Versions
-          </h1>
+          <h1 className="text-2xl font-semibold" data-testid="text-page-title">Resume Versions</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Every AI-tailored resume is saved here — one version per job optimization.
           </p>

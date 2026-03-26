@@ -250,10 +250,7 @@ export default function NetworkingPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
-            <Users className="h-6 w-6 text-primary" />
-            Networking Tracker
-          </h1>
+          <h1 className="text-2xl font-semibold" data-testid="text-page-title">Networking Tracker</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Track recruiters, referrals, and connections throughout your job search.
           </p>

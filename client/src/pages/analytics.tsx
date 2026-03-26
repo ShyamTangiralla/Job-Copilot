@@ -255,10 +255,7 @@ export default function AnalyticsPage() {
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
-          <BarChart3 className="h-6 w-6 text-primary" />
-          Analytics
-        </h1>
+        <h1 className="text-2xl font-semibold" data-testid="text-page-title">Analytics</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Pipeline, resume performance, application trends, time metrics, and job market intelligence.
         </p>
