@@ -91,6 +91,9 @@ function TailoringHistory({ jobId }: { jobId: number }) {
       toast({ title: "Deleted" });
       queryClient.invalidateQueries({ queryKey: ["/api/tailoring/history", String(jobId)] });
     },
+    onError: (e: any) => {
+      toast({ title: "Delete failed", description: e?.message ?? "Please try again.", variant: "destructive" });
+    },
   });
 
   const copyText = (text: string) => {
@@ -735,6 +738,10 @@ export default function JobDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/jobs", params.id, "notes"] });
+      toast({ title: "Note saved" });
+    },
+    onError: (e: any) => {
+      toast({ title: "Failed to save note", description: e?.message ?? "Please try again.", variant: "destructive" });
     },
   });
 
@@ -791,6 +798,9 @@ export default function JobDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/jobs", params.id] });
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+    },
+    onError: (e: any) => {
+      toast({ title: "Failed to save changes", description: e?.message ?? "Please try again.", variant: "destructive" });
     },
   });
 

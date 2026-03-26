@@ -143,6 +143,9 @@ export default function JobsInbox() {
       setSelectedJob(updated);
       toast({ title: `Job marked as ${updated.status}` });
     },
+    onError: (err: any) => {
+      toast({ title: "Failed to update status", description: err?.message ?? "Please try again.", variant: "destructive" });
+    },
   });
 
   const createJob = useMutation({
@@ -155,6 +158,9 @@ export default function JobsInbox() {
       setDialogOpen(false);
       setDuplicateWarning(null);
       toast({ title: "Job added successfully" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to add job", description: err?.message ?? "Please try again.", variant: "destructive" });
     },
   });
 
@@ -290,15 +296,26 @@ export default function JobsInbox() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const title = (fd.get("title") as string ?? "").trim();
+    const company = (fd.get("company") as string ?? "").trim();
+    const applyLink = (fd.get("applyLink") as string ?? "").trim();
+    if (!title) {
+      toast({ title: "Job title is required", variant: "destructive" });
+      return;
+    }
+    if (!company) {
+      toast({ title: "Company name is required", variant: "destructive" });
+      return;
+    }
     createJob.mutate({
-      title: fd.get("title") as string,
-      company: fd.get("company") as string,
+      title,
+      company,
       source: fd.get("source") as string,
       location: fd.get("location") as string,
       workMode: fd.get("workMode") as string,
       datePosted: fd.get("datePosted") as string,
       description: fd.get("description") as string,
-      applyLink: fd.get("applyLink") as string,
+      applyLink,
       priority: fd.get("priority") as string,
       notes: fd.get("notes") as string,
       followUpDate: fd.get("followUpDate") as string,

@@ -84,6 +84,9 @@ export default function Tracker() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
     },
+    onError: () => {
+      toast({ title: "Failed to update status", variant: "destructive" });
+    },
   });
 
   const markDone = useMutation({
@@ -94,6 +97,9 @@ export default function Tracker() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       toast({ title: "Follow-up marked as done" });
+    },
+    onError: () => {
+      toast({ title: "Failed to mark follow-up done", variant: "destructive" });
     },
   });
 
