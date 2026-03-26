@@ -42,6 +42,7 @@ const navItems = [
   { title: "Networking", url: "/networking", icon: Users },
   { title: "Tracker", url: "/tracker", icon: BarChart3 },
   { title: "Analytics", url: "/analytics", icon: LineChart },
+  { title: "Export Center", url: "/export", icon: Download },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 

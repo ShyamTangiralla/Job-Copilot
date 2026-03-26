@@ -22,6 +22,7 @@ import AnalyticsPage from "@/pages/analytics";
 import InterviewsPage from "@/pages/interviews";
 import OffersPage from "@/pages/offers";
 import NetworkingPage from "@/pages/networking";
+import ExportCenter from "@/pages/export-center";
 
 function Router() {
   return (
@@ -42,6 +43,7 @@ function Router() {
       <Route path="/tracker" component={Tracker} />
       <Route path="/settings" component={SettingsPage} />
       <Route path="/quick-capture" component={QuickCapture} />
+      <Route path="/export" component={ExportCenter} />
       <Route component={NotFound} />
     </Switch>
   );

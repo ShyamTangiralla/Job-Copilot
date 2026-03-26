@@ -20,6 +20,12 @@ import {
   getCustomTemplate,
   saveCustomTemplate,
 } from "./docx-export";
+import {
+  buildApplicationsCsv,
+  buildAnalyticsSummaryPdf,
+  buildResumePerformancePdf,
+  buildJobActivityPdf,
+} from "./export-reports";
 
 /**
  * Strip HTML tags and decode common entities for server-side text processing.
@@ -501,6 +507,224 @@ export async function registerRoutes(
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", "attachment; filename=jobs_export.csv");
       res.send(csv);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ─── Export Center ─────────────────────────────────────────────────────────────
+
+  // 1. Enhanced Applications CSV
+  app.get("/api/export/applications.csv", async (_req, res) => {
+    try {
+      const jobs = await storage.getJobs();
+      const csv = buildApplicationsCsv(jobs);
+      const date = new Date().toISOString().split("T")[0];
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="Applications_${date}.csv"`);
+      res.send(csv);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // 2. Analytics Summary PDF
+  app.get("/api/export/analytics-summary.pdf", async (_req, res) => {
+    try {
+      const [allJobs, allVersions] = await Promise.all([storage.getJobs(), storage.getResumeVersions()]);
+      const APPLIED_STATUSES = new Set(["Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response"]);
+      const INTERVIEW_STATUSES = new Set(["Interview", "Final Round", "Offer"]);
+      const applied = allJobs.filter(j => APPLIED_STATUSES.has(j.status));
+      const interviews = allJobs.filter(j => INTERVIEW_STATUSES.has(j.status));
+
+      // Pipeline funnel
+      const pipelineFunnel = [
+        { stage: "Discovered", count: allJobs.length, conversionFromPrev: 100 },
+        { stage: "Applied", count: applied.length, conversionFromPrev: allJobs.length > 0 ? Math.round(applied.length / allJobs.length * 100) : 0 },
+        { stage: "Interviewed", count: interviews.length, conversionFromPrev: applied.length > 0 ? Math.round(interviews.length / applied.length * 100) : 0 },
+        { stage: "Offer", count: allJobs.filter(j => j.status === "Offer").length, conversionFromPrev: interviews.length > 0 ? Math.round(allJobs.filter(j => j.status === "Offer").length / interviews.length * 100) : 0 },
+      ];
+
+      // Top companies
+      const coMap: Record<string, number> = {};
+      for (const j of applied) if (j.company) coMap[j.company] = (coMap[j.company] ?? 0) + 1;
+      const topCompanies = Object.entries(coMap).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([company, count]) => ({ company, count }));
+
+      // By role type
+      const roleMap: Record<string, number> = {};
+      for (const j of applied) { const r = j.roleClassification || "Unknown"; roleMap[r] = (roleMap[r] ?? 0) + 1; }
+      const applicationsByRoleType = Object.entries(roleMap).sort((a, b) => b[1] - a[1]).map(([role, count]) => ({ role, count }));
+
+      // Source analytics
+      const srcMap: Record<string, { applied: number; interviews: number; offers: number }> = {};
+      for (const j of applied) {
+        const s = j.source || "Unknown";
+        if (!srcMap[s]) srcMap[s] = { applied: 0, interviews: 0, offers: 0 };
+        srcMap[s].applied++;
+        if (INTERVIEW_STATUSES.has(j.status)) srcMap[s].interviews++;
+        if (j.status === "Offer") srcMap[s].offers++;
+      }
+      const sourceAnalytics = Object.entries(srcMap).map(([source, v]) => ({
+        source, ...v, interviewRate: v.applied > 0 ? Math.round(v.interviews / v.applied * 100) : 0,
+      })).sort((a, b) => b.applied - a.applied);
+
+      // Avg ATS
+      const atsScores = applied.filter(j => (j.atsScoreAtApply ?? 0) > 0).map(j => j.atsScoreAtApply!);
+      const avgAtsScoreApplied = atsScores.length > 0 ? Math.round(atsScores.reduce((a, b) => a + b, 0) / atsScores.length) : 0;
+
+      // Time metrics
+      const appliedToInterview = applied.filter(j => j.dateApplied && j.interviewDate)
+        .map(j => (new Date(j.interviewDate!).getTime() - new Date(j.dateApplied!).getTime()) / 86400000)
+        .filter(d => d >= 0 && d < 365);
+      const appliedToOffer = applied.filter(j => j.dateApplied && (j as any).offerDate)
+        .map(j => (new Date((j as any).offerDate).getTime() - new Date(j.dateApplied!).getTime()) / 86400000)
+        .filter(d => d >= 0 && d < 365);
+
+      const pdf = await buildAnalyticsSummaryPdf({
+        totalJobs: allJobs.length, totalApplications: applied.length,
+        totalInterviews: interviews.length, totalOffers: allJobs.filter(j => j.status === "Offer").length,
+        conversionRate: applied.length > 0 ? Math.round(interviews.length / applied.length * 100) : 0,
+        avgAtsScoreApplied,
+        avgDaysAppliedToInterview: appliedToInterview.length > 0 ? Math.round(appliedToInterview.reduce((a, b) => a + b, 0) / appliedToInterview.length) : null,
+        avgDaysAppliedToOffer: appliedToOffer.length > 0 ? Math.round(appliedToOffer.reduce((a, b) => a + b, 0) / appliedToOffer.length) : null,
+        avgTotalHiringTimeline: null,
+        pipelineFunnel, topCompanies, applicationsByRoleType, sourceAnalytics,
+      });
+      const date = new Date().toISOString().split("T")[0];
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="Analytics_Summary_${date}.pdf"`);
+      res.send(pdf);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // 3. Resume Performance PDF
+  app.get("/api/export/resume-performance.pdf", async (_req, res) => {
+    try {
+      const [allJobs, allVersions] = await Promise.all([storage.getJobs(), storage.getResumeVersions()]);
+      const APPLIED_STATUSES = new Set(["Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response"]);
+      const INTERVIEW_STATUSES = new Set(["Interview", "Final Round", "Offer"]);
+      const applied = allJobs.filter(j => APPLIED_STATUSES.has(j.status));
+
+      const versionMap: Record<number, { applied: number; interviews: number; offers: number; atsScores: number[] }> = {};
+      for (const j of applied) {
+        if (!j.resumeVersionId) continue;
+        if (!versionMap[j.resumeVersionId]) versionMap[j.resumeVersionId] = { applied: 0, interviews: 0, offers: 0, atsScores: [] };
+        versionMap[j.resumeVersionId].applied++;
+        if (INTERVIEW_STATUSES.has(j.status)) versionMap[j.resumeVersionId].interviews++;
+        if (j.status === "Offer") versionMap[j.resumeVersionId].offers++;
+        if ((j.atsScoreAtApply ?? 0) > 0) versionMap[j.resumeVersionId].atsScores.push(j.atsScoreAtApply!);
+      }
+
+      const versions = Object.entries(versionMap).map(([id, v]) => {
+        const ver = allVersions.find(x => x.id === Number(id));
+        return {
+          version: ver?.versionLabel ?? `Version #${id}`,
+          applied: v.applied, interviews: v.interviews, offers: v.offers,
+          interviewRate: v.applied > 0 ? Math.round(v.interviews / v.applied * 100) : 0,
+          offerRate: v.applied > 0 ? Math.round(v.offers / v.applied * 100) : 0,
+          avgAts: v.atsScores.length > 0 ? Math.round(v.atsScores.reduce((a, b) => a + b, 0) / v.atsScores.length) : 0,
+        };
+      }).sort((a, b) => b.applied - a.applied);
+
+      const bestVersion = versions.sort((a, b) => b.interviewRate - a.interviewRate)[0] ?? null;
+
+      const atsScoresBefore = allVersions.filter(v => (v as any).atsBefore > 0).map(v => (v as any).atsBefore as number);
+      const atsScoresAfter = allVersions.filter(v => (v as any).atsAfter > 0).map(v => (v as any).atsAfter as number);
+      const avgAtsBefore = atsScoresBefore.length > 0 ? atsScoresBefore.reduce((a, b) => a + b, 0) / atsScoresBefore.length : 0;
+      const avgAtsAfter = atsScoresAfter.length > 0 ? atsScoresAfter.reduce((a, b) => a + b, 0) / atsScoresAfter.length : 0;
+
+      const pdf = await buildResumePerformancePdf({
+        versions: versions.sort((a, b) => b.applied - a.applied),
+        bestVersion: bestVersion ? { version: bestVersion.version, interviewRate: bestVersion.interviewRate } : null,
+        avgAtsBefore, avgAtsAfter, totalVersions: allVersions.length,
+      });
+      const date = new Date().toISOString().split("T")[0];
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="Resume_Performance_${date}.pdf"`);
+      res.send(pdf);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // 4. Job Activity Report PDF
+  app.get("/api/export/job-activity.pdf", async (_req, res) => {
+    try {
+      const [allJobs, allContacts] = await Promise.all([storage.getJobs(), storage.getContacts()]);
+      const APPLIED_STATUSES = new Set(["Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response"]);
+      const INTERVIEW_STATUSES = new Set(["Interview", "Final Round", "Offer"]);
+      const applied = allJobs.filter(j => APPLIED_STATUSES.has(j.status));
+      const interviews = allJobs.filter(j => INTERVIEW_STATUSES.has(j.status));
+
+      const wkKey = (s: string | null) => {
+        if (!s) return null;
+        const d = new Date(s); if (isNaN(d.getTime())) return null;
+        const m = new Date(d); m.setDate(d.getDate() - d.getDay() + 1);
+        const k = m.toISOString().split("T")[0];
+        return new Date(k).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      };
+
+      // 16-week window
+      const weeks: string[] = [];
+      for (let w = 15; w >= 0; w--) {
+        const d = new Date(); d.setDate(d.getDate() - w * 7);
+        const m = new Date(d); m.setDate(d.getDate() - d.getDay() + 1);
+        const lbl = m.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        if (!weeks.includes(lbl)) weeks.push(lbl);
+      }
+
+      const weeklyActivity = weeks.map(week => ({
+        week,
+        applications: applied.filter(j => wkKey(j.dateApplied) === week).length,
+        interviews: allJobs.filter(j => INTERVIEW_STATUSES.has(j.status) && wkKey(j.dateApplied) === week).length,
+        rejections: allJobs.filter(j => j.status === "Rejected" && wkKey(j.dateApplied) === week).length,
+        networkingContacts: allContacts.filter(c => wkKey(c.createdAt instanceof Date ? c.createdAt.toISOString() : String(c.createdAt)) === week).length,
+        followUps: allContacts.filter(c => wkKey(c.lastContactDate) === week).length,
+      }));
+
+      // Offers per month
+      const offerMonthMap: Record<string, number> = {};
+      for (const j of allJobs.filter(j => j.status === "Offer" && (j as any).offerDate)) {
+        const m = new Date((j as any).offerDate).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+        offerMonthMap[m] = (offerMonthMap[m] ?? 0) + 1;
+      }
+      const offersPerMonth = Object.entries(offerMonthMap).map(([month, count]) => ({ month, count }));
+
+      // Company analytics
+      const coMap: Record<string, { applied: number; interviews: number; offers: number }> = {};
+      for (const j of applied) {
+        const co = (j.company || "Unknown").trim();
+        if (!coMap[co]) coMap[co] = { applied: 0, interviews: 0, offers: 0 };
+        coMap[co].applied++;
+        if (INTERVIEW_STATUSES.has(j.status)) coMap[co].interviews++;
+        if (j.status === "Offer") coMap[co].offers++;
+      }
+      const companyAnalytics = Object.entries(coMap).map(([company, v]) => ({
+        company, ...v,
+        interviewRate: v.applied > 0 ? Math.round(v.interviews / v.applied * 100) : 0,
+      })).sort((a, b) => b.applied - a.applied);
+
+      // Score (simplified)
+      const conversionRate = applied.length > 0 ? Math.round(interviews.length / applied.length * 100) : 0;
+
+      // Fetch score separately
+      let score = 0; let grade = "Needs Work";
+      try {
+        const scoreRes = await fetch(`http://localhost:5000/api/job-search-score`);
+        if (scoreRes.ok) { const s = await scoreRes.json(); score = s.score; grade = s.grade; }
+      } catch {}
+
+      const pdf = await buildJobActivityPdf({
+        score, grade, weeklyActivity, offersPerMonth, companyAnalytics,
+        totalApplications: applied.length, totalInterviews: interviews.length,
+        totalOffers: allJobs.filter(j => j.status === "Offer").length, conversionRate,
+      });
+      const date = new Date().toISOString().split("T")[0];
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="Job_Activity_Report_${date}.pdf"`);
+      res.send(pdf);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
