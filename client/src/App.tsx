@@ -21,6 +21,7 @@ import ResumeVersionsPage from "@/pages/resume-versions";
 import AnalyticsPage from "@/pages/analytics";
 import InterviewsPage from "@/pages/interviews";
 import OffersPage from "@/pages/offers";
+import NetworkingPage from "@/pages/networking";
 
 function Router() {
   return (
@@ -37,6 +38,7 @@ function Router() {
       <Route path="/profile" component={CandidateProfilePage} />
       <Route path="/interviews" component={InterviewsPage} />
       <Route path="/offers" component={OffersPage} />
+      <Route path="/networking" component={NetworkingPage} />
       <Route path="/tracker" component={Tracker} />
       <Route path="/settings" component={SettingsPage} />
       <Route path="/quick-capture" component={QuickCapture} />

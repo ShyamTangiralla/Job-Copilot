@@ -86,6 +86,9 @@ export const jobs = pgTable("jobs", {
   offerDeadline: text("offer_deadline").notNull().default(""),
   offerDecision: text("offer_decision").notNull().default(""),
   offerNotes: text("offer_notes").notNull().default(""),
+  salaryMin: integer("salary_min"),
+  salaryMax: integer("salary_max"),
+  salaryCurrency: text("salary_currency").notNull().default("USD"),
 });
 
 export const insertJobSchema = createInsertSchema(jobs).omit({ id: true, createdAt: true });
@@ -271,6 +274,44 @@ export const aiCache = pgTable("ai_cache", {
 export const insertAiCacheSchema = createInsertSchema(aiCache).omit({ id: true, createdAt: true });
 export type InsertAiCache = z.infer<typeof insertAiCacheSchema>;
 export type AiCache = typeof aiCache.$inferSelect;
+
+// ─── Job Notes ────────────────────────────────────────────────────────────────
+export const jobNotes = pgTable("job_notes", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  jobId: integer("job_id").notNull(),
+  noteType: text("note_type").notNull().default("general"),
+  content: text("content").notNull().default(""),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertJobNoteSchema = createInsertSchema(jobNotes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertJobNote = z.infer<typeof insertJobNoteSchema>;
+export type JobNote = typeof jobNotes.$inferSelect;
+
+// ─── Contacts / Networking ────────────────────────────────────────────────────
+export const contacts = pgTable("contacts", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  jobId: integer("job_id"),
+  name: text("name").notNull().default(""),
+  title: text("title").notNull().default(""),
+  company: text("company").notNull().default(""),
+  email: text("email").notNull().default(""),
+  phone: text("phone").notNull().default(""),
+  linkedinUrl: text("linkedin_url").notNull().default(""),
+  contactType: text("contact_type").notNull().default("Connection"),
+  lastContactDate: text("last_contact_date").notNull().default(""),
+  followUpDate: text("follow_up_date").notNull().default(""),
+  notes: text("notes").notNull().default(""),
+  isReferral: boolean("is_referral").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertContactSchema = createInsertSchema(contacts).omit({ id: true, createdAt: true });
+export type InsertContact = z.infer<typeof insertContactSchema>;
+export type Contact = typeof contacts.$inferSelect;
+
+export const CONTACT_TYPES = ["Recruiter", "Hiring Manager", "Referral", "Connection", "Other"] as const;
 
 export const JOB_STATUSES = ["New", "Reviewed", "Ready to Apply", "Saved", "Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response", "Skipped"] as const;
 export const APPLICATION_STATUSES = ["Saved", "Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response"] as const;

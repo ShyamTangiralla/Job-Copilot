@@ -12,8 +12,11 @@ import {
   type CoverLetter, type InsertCoverLetter,
   type ResumeVersion, type InsertResumeVersion,
   type AiCache,
+  type JobNote, type InsertJobNote,
+  type Contact, type InsertContact,
   candidateProfile, resumes, jobs, applicationAnswers, activityLog, settings, importLog,
   discoveryRuns, discoveryResults, tailoredResumes, coverLetters, resumeVersions, aiUsageLog, aiCache,
+  jobNotes, contacts,
   ROLE_TYPES,
 } from "@shared/schema";
 import { db } from "./db";
@@ -128,6 +131,18 @@ export interface IStorage {
   getResumeVersionsByJob(jobId: number): Promise<ResumeVersion[]>;
   deleteResumeVersion(id: number): Promise<void>;
   nextVersionLabel(jobId: number): Promise<string>;
+
+  getJobNotes(jobId: number): Promise<JobNote[]>;
+  createJobNote(data: InsertJobNote): Promise<JobNote>;
+  updateJobNote(id: number, content: string): Promise<JobNote | undefined>;
+  deleteJobNote(id: number): Promise<void>;
+
+  getContacts(): Promise<Contact[]>;
+  getContact(id: number): Promise<Contact | undefined>;
+  getContactsByJob(jobId: number): Promise<Contact[]>;
+  createContact(data: InsertContact): Promise<Contact>;
+  updateContact(id: number, data: Partial<InsertContact>): Promise<Contact | undefined>;
+  deleteContact(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -763,6 +778,60 @@ export class DatabaseStorage implements IStorage {
       .from(resumeVersions)
       .where(eq(resumeVersions.jobId, jobId));
     return `v${existing.length + 1}`;
+  }
+
+  // ─── Job Notes ───────────────────────────────────────────────────────────────
+
+  async getJobNotes(jobId: number): Promise<JobNote[]> {
+    return db.select().from(jobNotes)
+      .where(eq(jobNotes.jobId, jobId))
+      .orderBy(jobNotes.noteType, jobNotes.createdAt);
+  }
+
+  async createJobNote(data: InsertJobNote): Promise<JobNote> {
+    const [created] = await db.insert(jobNotes).values(data).returning();
+    return created;
+  }
+
+  async updateJobNote(id: number, content: string): Promise<JobNote | undefined> {
+    const [updated] = await db.update(jobNotes)
+      .set({ content, updatedAt: new Date() })
+      .where(eq(jobNotes.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteJobNote(id: number): Promise<void> {
+    await db.delete(jobNotes).where(eq(jobNotes.id, id));
+  }
+
+  // ─── Contacts ────────────────────────────────────────────────────────────────
+
+  async getContacts(): Promise<Contact[]> {
+    return db.select().from(contacts).orderBy(desc(contacts.createdAt));
+  }
+
+  async getContact(id: number): Promise<Contact | undefined> {
+    const rows = await db.select().from(contacts).where(eq(contacts.id, id));
+    return rows[0];
+  }
+
+  async getContactsByJob(jobId: number): Promise<Contact[]> {
+    return db.select().from(contacts).where(eq(contacts.jobId, jobId)).orderBy(desc(contacts.createdAt));
+  }
+
+  async createContact(data: InsertContact): Promise<Contact> {
+    const [created] = await db.insert(contacts).values(data).returning();
+    return created;
+  }
+
+  async updateContact(id: number, data: Partial<InsertContact>): Promise<Contact | undefined> {
+    const [updated] = await db.update(contacts).set(data).where(eq(contacts.id, id)).returning();
+    return updated;
+  }
+
+  async deleteContact(id: number): Promise<void> {
+    await db.delete(contacts).where(eq(contacts.id, id));
   }
 }
 

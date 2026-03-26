@@ -39,6 +39,10 @@ This app helps manage the job application workflow: classify jobs by role type, 
 8. **Candidate Profile** (`/profile`) - Personal info form and standard application answers
 9. **Tracker** (`/tracker`) - Kanban board (drag-and-drop), Table view, Analytics tab, CSV export
 10. **Settings** (`/settings`) - Manage role categories, sources, statuses, and scoring weights
+11. **Interview Tracker** (`/interviews`) - Track interview rounds, results, and schedule
+12. **Offer Tracker** (`/offers`) - Track offers with salary, deadline, decision status
+13. **Networking Tracker** (`/networking`) - Track contacts (recruiters, referrals, connections) with follow-up reminders, linked jobs, and contact details
+14. **Analytics** (`/analytics`) - 6-tab dashboard: Pipeline, Applications, Resume, Time, Job Market, Salary
 
 ## Job Discovery System
 

@@ -4,7 +4,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { storage } from "./storage";
-import { insertJobSchema, insertResumeSchema, insertApplicationAnswerSchema, insertCandidateProfileSchema, insertResumeVersionSchema } from "@shared/schema";
+import { insertJobSchema, insertResumeSchema, insertApplicationAnswerSchema, insertCandidateProfileSchema, insertResumeVersionSchema, insertJobNoteSchema, insertContactSchema } from "@shared/schema";
 import { scrapeJobFromUrl, parseEmailContent, parseBulkInput } from "./scraper";
 import { runDiscovery, stopDiscovery, isDiscoveryRunning } from "./discovery";
 import { analyzeAndTailor, optimizeResume } from "./tailoring";
@@ -2278,6 +2278,91 @@ export async function registerRoutes(
         return entry;
       });
 
+      // ── Salary Analytics ──────────────────────────────────────────────────────
+      const parseSalaryFromText = (text: string): { min: number | null; max: number | null } => {
+        if (!text) return { min: null, max: null };
+        const pattern = /\$\s*(\d[\d,]*(?:\.\d+)?)\s*[kK]?\s*(?:[-–—to]+\s*\$?\s*(\d[\d,]*(?:\.\d+)?)\s*[kK]?)?/g;
+        const matches: { min: number; max: number }[] = [];
+        let m;
+        while ((m = pattern.exec(text)) !== null) {
+          const parse = (s: string | undefined, hasK: boolean) => {
+            if (!s) return null;
+            const n = parseFloat(s.replace(/,/g, ""));
+            return hasK || n < 1000 ? n * 1000 : n;
+          };
+          const hasK1 = m[0].toLowerCase().includes("k");
+          const val1 = parse(m[1], hasK1);
+          const val2 = m[2] ? parse(m[2], hasK1) : null;
+          if (val1 && val1 > 20000 && val1 < 1000000) matches.push({ min: val1, max: val2 || val1 });
+        }
+        if (matches.length === 0) return { min: null, max: null };
+        return { min: Math.min(...matches.map(mm => mm.min)), max: Math.max(...matches.map(mm => mm.max)) };
+      };
+
+      const salaryByRole: Record<string, number[]> = {};
+      const salaryByLocation: Record<string, number[]> = {};
+      const salaryByWorkMode: Record<string, number[]> = {};
+
+      for (const job of allJobs) {
+        let minVal = job.salaryMin ?? 0;
+        let maxVal = job.salaryMax ?? 0;
+        if (!minVal && !maxVal && job.description) {
+          const parsed = parseSalaryFromText(serverStripHtml(job.description));
+          minVal = parsed.min ?? 0;
+          maxVal = parsed.max ?? 0;
+        }
+        if (!minVal && !maxVal) continue;
+        const mid = minVal && maxVal ? (minVal + maxVal) / 2 : (minVal || maxVal);
+        if (mid < 20000 || mid > 1000000) continue;
+
+        const role = job.roleClassification || "Unknown";
+        const loc = job.location ? job.location.split(",")[0].trim() : "Unknown";
+        const wm = job.workMode || "Unknown";
+
+        if (!salaryByRole[role]) salaryByRole[role] = [];
+        salaryByRole[role].push(mid);
+        if (!salaryByLocation[loc]) salaryByLocation[loc] = [];
+        salaryByLocation[loc].push(mid);
+        if (!salaryByWorkMode[wm]) salaryByWorkMode[wm] = [];
+        salaryByWorkMode[wm].push(mid);
+      }
+
+      const salarySummaryByRole = Object.entries(salaryByRole)
+        .map(([role, vals]) => ({
+          role,
+          count: vals.length,
+          avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
+          min: Math.round(Math.min(...vals)),
+          max: Math.round(Math.max(...vals)),
+        }))
+        .filter(r => r.count >= 1)
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 8);
+
+      const salarySummaryByLocation = Object.entries(salaryByLocation)
+        .map(([location, vals]) => ({
+          location,
+          count: vals.length,
+          avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
+        }))
+        .filter(r => r.count >= 2)
+        .sort((a, b) => b.avg - a.avg)
+        .slice(0, 10);
+
+      const salarySummaryByWorkMode = Object.entries(salaryByWorkMode)
+        .map(([mode, vals]) => ({
+          mode,
+          count: vals.length,
+          avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
+          min: Math.round(Math.min(...vals)),
+          max: Math.round(Math.max(...vals)),
+        }))
+        .sort((a, b) => b.avg - a.avg);
+
+      const allSalaryMids = Object.values(salaryByRole).flat();
+      const overallAvgSalary = allSalaryMids.length > 0
+        ? Math.round(allSalaryMids.reduce((a, b) => a + b, 0) / allSalaryMids.length) : null;
+
       res.json({
         totalJobsScraped,
         totalJobsImported,
@@ -2314,6 +2399,11 @@ export async function registerRoutes(
         totalVersions: allVersions.length,
         avgAtsBefore: allVersions.length > 0 ? Math.round(allVersions.reduce((a, v) => a + v.atsScoreBefore, 0) / allVersions.length) : 0,
         avgAtsAfter: allVersions.length > 0 ? Math.round(allVersions.reduce((a, v) => a + v.atsScoreAfter, 0) / allVersions.length) : 0,
+        salarySummaryByRole,
+        salarySummaryByLocation,
+        salarySummaryByWorkMode,
+        overallAvgSalary,
+        totalJobsWithSalary: Object.values(salaryByRole).flat().length,
       });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -2469,6 +2559,84 @@ export async function registerRoutes(
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
+  });
+
+  // ─── Job Notes ───────────────────────────────────────────────────────────────
+
+  app.get("/api/jobs/:id/notes", async (req, res) => {
+    const jobId = parseInt(req.params.id);
+    if (isNaN(jobId)) return res.status(400).json({ message: "Invalid job id" });
+    const notes = await storage.getJobNotes(jobId);
+    res.json(notes);
+  });
+
+  app.post("/api/jobs/:id/notes", async (req, res) => {
+    const jobId = parseInt(req.params.id);
+    if (isNaN(jobId)) return res.status(400).json({ message: "Invalid job id" });
+    const { noteType = "general", content = "" } = req.body;
+    const note = await storage.createJobNote({ jobId, noteType, content });
+    res.status(201).json(note);
+  });
+
+  app.patch("/api/jobs/:id/notes/:noteId", async (req, res) => {
+    const noteId = parseInt(req.params.noteId);
+    if (isNaN(noteId)) return res.status(400).json({ message: "Invalid note id" });
+    const { content } = req.body;
+    if (typeof content !== "string") return res.status(400).json({ message: "content required" });
+    const updated = await storage.updateJobNote(noteId, content);
+    if (!updated) return res.status(404).json({ message: "Note not found" });
+    res.json(updated);
+  });
+
+  app.delete("/api/jobs/:id/notes/:noteId", async (req, res) => {
+    const noteId = parseInt(req.params.noteId);
+    if (isNaN(noteId)) return res.status(400).json({ message: "Invalid note id" });
+    await storage.deleteJobNote(noteId);
+    res.json({ success: true });
+  });
+
+  // ─── Contacts / Networking ────────────────────────────────────────────────────
+
+  app.get("/api/contacts", async (_req, res) => {
+    const all = await storage.getContacts();
+    res.json(all);
+  });
+
+  app.get("/api/contacts/:id", async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid id" });
+    const contact = await storage.getContact(id);
+    if (!contact) return res.status(404).json({ message: "Not found" });
+    res.json(contact);
+  });
+
+  app.get("/api/jobs/:id/contacts", async (req, res) => {
+    const jobId = parseInt(req.params.id);
+    if (isNaN(jobId)) return res.status(400).json({ message: "Invalid job id" });
+    const all = await storage.getContactsByJob(jobId);
+    res.json(all);
+  });
+
+  app.post("/api/contacts", async (req, res) => {
+    const parsed = insertContactSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+    const contact = await storage.createContact(parsed.data);
+    res.status(201).json(contact);
+  });
+
+  app.patch("/api/contacts/:id", async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid id" });
+    const updated = await storage.updateContact(id, req.body);
+    if (!updated) return res.status(404).json({ message: "Not found" });
+    res.json(updated);
+  });
+
+  app.delete("/api/contacts/:id", async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid id" });
+    await storage.deleteContact(id);
+    res.json({ success: true });
   });
 
   return httpServer;

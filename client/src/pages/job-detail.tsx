@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -52,7 +53,7 @@ import {
 import { exportResumePdf } from "@/lib/export-resume";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Job, CandidateProfile, Resume, ApplicationAnswer, ResumeVersion } from "@shared/schema";
+import type { Job, CandidateProfile, Resume, ApplicationAnswer, ResumeVersion, JobNote } from "@shared/schema";
 import { APPLICATION_STATUSES, PRIORITIES } from "@shared/schema";
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -660,6 +661,13 @@ export default function JobDetail() {
   const [offerDeadline, setOfferDeadline] = useState("");
   const [offerDecision, setOfferDecision] = useState("");
   const [offerNotes, setOfferNotes] = useState("");
+  const [salaryMin, setSalaryMin] = useState("");
+  const [salaryMax, setSalaryMax] = useState("");
+
+  // Structured note texts by type
+  const [noteTexts, setNoteTexts] = useState<Record<string, string>>({
+    general: "", interview: "", questions: "",
+  });
 
   // Apply dialog state
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
@@ -689,6 +697,41 @@ export default function JobDetail() {
       return res.json();
     },
     enabled: !!params.id,
+  });
+
+  const { data: jobNotes = [] } = useQuery<JobNote[]>({
+    queryKey: ["/api/jobs", params.id, "notes"],
+    queryFn: async () => {
+      const res = await fetch(`/api/jobs/${params.id}/notes`);
+      return res.json();
+    },
+    enabled: !!params.id,
+  });
+
+  // Sync noteTexts when notes are loaded
+  useEffect(() => {
+    if (jobNotes.length > 0) {
+      const updated: Record<string, string> = { general: "", interview: "", questions: "" };
+      for (const note of jobNotes) {
+        const key = note.noteType ?? "general";
+        if (key in updated) updated[key] = note.content ?? "";
+      }
+      setNoteTexts(updated);
+    }
+  }, [jobNotes]);
+
+  const saveNoteMutation = useMutation({
+    mutationFn: async ({ noteType, content }: { noteType: string; content: string }) => {
+      const existing = jobNotes.find(n => n.noteType === noteType);
+      if (existing) {
+        return apiRequest("PATCH", `/api/jobs/${params.id}/notes/${existing.id}`, { content });
+      } else {
+        return apiRequest("POST", `/api/jobs/${params.id}/notes`, { noteType, content });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", params.id, "notes"] });
+    },
   });
 
   const applyMutation = useMutation({
@@ -728,6 +771,8 @@ export default function JobDetail() {
       setOfferDeadline((job as any).offerDeadline ?? "");
       setOfferDecision((job as any).offerDecision ?? "");
       setOfferNotes((job as any).offerNotes ?? "");
+      setSalaryMin((job as any).salaryMin?.toString() ?? "");
+      setSalaryMax((job as any).salaryMax?.toString() ?? "");
     }
   }, [job]);
 
@@ -979,17 +1024,52 @@ export default function JobDetail() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-medium">Notes</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
+              {/* Quick note (legacy job.notes) */}
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 onBlur={() => {
                   if (notes !== job.notes) updateJob.mutate({ notes });
                 }}
-                rows={3}
-                placeholder="Add notes about this application..."
+                rows={2}
+                placeholder="Quick note about this job..."
                 data-testid="input-job-notes"
+                className="text-xs"
               />
+
+              {/* Structured notes by type */}
+              <Tabs defaultValue="general" className="mt-1">
+                <TabsList className="h-7 text-xs">
+                  <TabsTrigger value="general" className="text-xs px-3 h-6">General</TabsTrigger>
+                  <TabsTrigger value="interview" className="text-xs px-3 h-6">Interview</TabsTrigger>
+                  <TabsTrigger value="questions" className="text-xs px-3 h-6">Questions Asked</TabsTrigger>
+                </TabsList>
+                {["general", "interview", "questions"].map(type => (
+                  <TabsContent key={type} value={type}>
+                    <Textarea
+                      value={noteTexts[type] ?? ""}
+                      onChange={e => setNoteTexts(prev => ({ ...prev, [type]: e.target.value }))}
+                      onBlur={() => {
+                        const content = noteTexts[type] ?? "";
+                        const existing = jobNotes.find(n => n.noteType === type);
+                        const existingContent = existing?.content ?? "";
+                        if (content !== existingContent) {
+                          saveNoteMutation.mutate({ noteType: type, content });
+                        }
+                      }}
+                      rows={4}
+                      placeholder={
+                        type === "general" ? "General notes about this role…" :
+                        type === "interview" ? "Interviewers, topics, feedback…" :
+                        "Questions they asked, or questions you plan to ask…"
+                      }
+                      className="text-xs mt-2"
+                      data-testid={`textarea-note-${type}`}
+                    />
+                  </TabsContent>
+                ))}
+              </Tabs>
             </CardContent>
           </Card>
         </div>
@@ -1081,6 +1161,44 @@ export default function JobDetail() {
                   className="h-8 text-xs"
                   data-testid="input-recruiter-email"
                 />
+              </div>
+
+              {/* Salary Range */}
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                  <DollarSign className="h-3 w-3" />
+                  Salary Range
+                </Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    type="number"
+                    value={salaryMin}
+                    onChange={e => setSalaryMin(e.target.value)}
+                    onBlur={() => {
+                      const val = salaryMin ? parseInt(salaryMin) : null;
+                      if (val !== ((job as any).salaryMin ?? null)) {
+                        updateJob.mutate({ salaryMin: val });
+                      }
+                    }}
+                    placeholder="Min e.g. 80000"
+                    className="h-8 text-xs"
+                    data-testid="input-salary-min"
+                  />
+                  <Input
+                    type="number"
+                    value={salaryMax}
+                    onChange={e => setSalaryMax(e.target.value)}
+                    onBlur={() => {
+                      const val = salaryMax ? parseInt(salaryMax) : null;
+                      if (val !== ((job as any).salaryMax ?? null)) {
+                        updateJob.mutate({ salaryMax: val });
+                      }
+                    }}
+                    placeholder="Max e.g. 110000"
+                    className="h-8 text-xs"
+                    data-testid="input-salary-max"
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>

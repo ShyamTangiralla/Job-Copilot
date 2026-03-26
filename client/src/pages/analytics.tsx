@@ -50,6 +50,11 @@ interface AnalyticsData {
   totalVersions: number;
   avgAtsBefore: number;
   avgAtsAfter: number;
+  salarySummaryByRole: { role: string; count: number; avg: number; min: number; max: number }[];
+  salarySummaryByLocation: { location: string; count: number; avg: number }[];
+  salarySummaryByWorkMode: { mode: string; count: number; avg: number; min: number; max: number }[];
+  overallAvgSalary: number | null;
+  totalJobsWithSalary: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -252,12 +257,13 @@ export default function AnalyticsPage() {
 
       {/* ── Tabs ────────────────────────────────────────────────────────────── */}
       <Tabs defaultValue="pipeline" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="pipeline" data-testid="tab-pipeline">Pipeline</TabsTrigger>
           <TabsTrigger value="applications" data-testid="tab-applications">Applications</TabsTrigger>
           <TabsTrigger value="resume" data-testid="tab-resume">Resume</TabsTrigger>
           <TabsTrigger value="time" data-testid="tab-time">Time</TabsTrigger>
           <TabsTrigger value="market" data-testid="tab-market">Job Market</TabsTrigger>
+          <TabsTrigger value="salary" data-testid="tab-salary">Salary</TabsTrigger>
         </TabsList>
 
         {/* ════════════════════════════════════════════════════════════════════
@@ -899,6 +905,150 @@ export default function AnalyticsPage() {
                     )}
                 </CardContent>
               </Card>
+            </>
+          )}
+        </TabsContent>
+
+        {/* ════════════════════════════════════════════════════════════════════
+            TAB 6 — SALARY ANALYTICS
+        ════════════════════════════════════════════════════════════════════ */}
+        <TabsContent value="salary" className="space-y-4">
+          {isLoading ? SkeletonCards(3, "h-56") : data && (
+            <>
+              {/* Summary strip */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {[
+                  {
+                    label: "Avg Market Salary",
+                    value: data.overallAvgSalary ? `$${Math.round(data.overallAvgSalary / 1000)}k` : "—",
+                    icon: TrendingUp, color: "text-emerald-500",
+                  },
+                  {
+                    label: "Jobs with Salary Data",
+                    value: data.totalJobsWithSalary.toString(),
+                    icon: Briefcase, color: "text-blue-500",
+                  },
+                  {
+                    label: "Salary Ranges Analyzed",
+                    value: data.salarySummaryByRole.length.toString(),
+                    icon: BarChart3, color: "text-violet-500",
+                  },
+                ].map(card => (
+                  <Card key={card.label}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-1">
+                        <span className="text-xs text-muted-foreground font-medium">{card.label}</span>
+                        <card.icon className={`h-4 w-4 shrink-0 ${card.color}`} />
+                      </div>
+                      <p className="text-2xl font-bold" data-testid={`text-salary-${card.label.toLowerCase().replace(/\s+/g, "-")}`}>
+                        {card.value}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Avg Salary by Role */}
+              <Card>
+                <CardHeader className="pb-1 pt-4 px-4">
+                  <CardTitle className="text-sm font-medium">Average Salary by Role</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    Based on salary data extracted from job descriptions in your inbox
+                  </p>
+                </CardHeader>
+                <CardContent className="px-2 pb-4">
+                  {data.salarySummaryByRole.length === 0 ? (
+                    <EmptyChart message="No salary data found in your job descriptions yet" />
+                  ) : (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={data.salarySummaryByRole} layout="vertical"
+                        margin={{ top: 4, right: 40, left: 80, bottom: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 10 }}
+                          tickFormatter={v => `$${Math.round(v / 1000)}k`} />
+                        <YAxis type="category" dataKey="role" tick={{ fontSize: 10 }} width={78} />
+                        <Tooltip
+                          content={<ChartTooltip />}
+                          formatter={(v: any) => [`$${Math.round(Number(v) / 1000)}k`, "Avg"]}
+                        />
+                        <Bar dataKey="avg" fill="hsl(var(--primary))" radius={[0, 3, 3, 0]}>
+                          {data.salarySummaryByRole.map((_, i) => (
+                            <Cell key={i} fill={`hsl(${220 + i * 20}, 70%, ${55 - i * 3}%)`} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Salary by Work Mode */}
+              {data.salarySummaryByWorkMode.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <CardTitle className="text-sm font-medium">Salary by Work Mode</CardTitle>
+                    <p className="text-xs text-muted-foreground">
+                      How remote, hybrid, and on-site roles compare on salary
+                    </p>
+                  </CardHeader>
+                  <CardContent className="px-2 pb-4">
+                    <ResponsiveContainer width="100%" height={180}>
+                      <BarChart data={data.salarySummaryByWorkMode}
+                        margin={{ top: 4, right: 24, left: 4, bottom: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis dataKey="mode" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `$${Math.round(v / 1000)}k`} />
+                        <Tooltip
+                          content={<ChartTooltip />}
+                          formatter={(v: any) => [`$${Math.round(Number(v) / 1000)}k`, ""]}
+                        />
+                        <Legend wrapperStyle={{ fontSize: 10 }} />
+                        <Bar dataKey="avg" name="Avg Salary" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
+                        <Bar dataKey="min" name="Min Salary" fill="hsl(142, 71%, 45%)" radius={[3, 3, 0, 0]} />
+                        <Bar dataKey="max" name="Max Salary" fill="hsl(24, 90%, 60%)" radius={[3, 3, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Top paying locations */}
+              {data.salarySummaryByLocation.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <CardTitle className="text-sm font-medium">Top Paying Locations</CardTitle>
+                    <p className="text-xs text-muted-foreground">
+                      Cities ranked by average salary in your job inbox (min. 2 jobs)
+                    </p>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4">
+                    <div className="space-y-2 mt-1">
+                      {data.salarySummaryByLocation.map((loc, i) => {
+                        const maxAvg = data.salarySummaryByLocation[0].avg;
+                        const pct = Math.round((loc.avg / maxAvg) * 100);
+                        return (
+                          <div key={loc.location} className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground w-4 text-right">{i + 1}</span>
+                            <span className="text-xs font-medium w-32 truncate">{loc.location}</span>
+                            <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="h-full bg-primary rounded-full"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-semibold w-14 text-right">
+                              ${Math.round(loc.avg / 1000)}k
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              ({loc.count} jobs)
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </>
           )}
         </TabsContent>
