@@ -81,6 +81,11 @@ export const jobs = pgTable("jobs", {
   resumeGeneratedDate: text("resume_generated_date").notNull().default(""),
   interviewRound: text("interview_round").notNull().default(""),
   interviewResult: text("interview_result").notNull().default(""),
+  offerSalary: text("offer_salary").notNull().default(""),
+  offerDate: text("offer_date").notNull().default(""),
+  offerDeadline: text("offer_deadline").notNull().default(""),
+  offerDecision: text("offer_decision").notNull().default(""),
+  offerNotes: text("offer_notes").notNull().default(""),
 });
 
 export const insertJobSchema = createInsertSchema(jobs).omit({ id: true, createdAt: true });

@@ -128,7 +128,7 @@ export default function Overview() {
             const rem = reminderLabel(job);
             return (
               <Link key={job.id} href={`/jobs/${job.id}`}>
-                <a className="flex items-center gap-3 rounded-md bg-white dark:bg-amber-950/40 px-3 py-2 border border-amber-100 dark:border-amber-800/50 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors"
+                <div className="flex items-center gap-3 rounded-md bg-white dark:bg-amber-950/40 px-3 py-2 border border-amber-100 dark:border-amber-800/50 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors cursor-pointer"
                   data-testid={`reminder-job-${job.id}`}>
                   <AlertCircle className={`h-4 w-4 shrink-0 ${rem.type === "stale" ? "text-amber-500" : "text-cyan-500"}`} />
                   <div className="flex-1 min-w-0">
@@ -136,15 +136,15 @@ export default function Overview() {
                     <p className="text-[10px] text-muted-foreground">{job.company} · {rem.text}</p>
                   </div>
                   <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                </a>
+                </div>
               </Link>
             );
           })}
           {reminders.length === 5 && (
             <Link href="/interviews">
-              <a className="block text-xs text-amber-700 dark:text-amber-400 hover:underline text-center pt-1">
+              <div className="block text-xs text-amber-700 dark:text-amber-400 hover:underline text-center pt-1 cursor-pointer">
                 View all in Interview Tracker →
-              </a>
+              </div>
             </Link>
           )}
         </div>

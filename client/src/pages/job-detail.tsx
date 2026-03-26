@@ -46,6 +46,8 @@ import {
   Mail,
   RefreshCw,
   Loader2,
+  Trophy,
+  DollarSign,
 } from "lucide-react";
 import { exportResumePdf } from "@/lib/export-resume";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -653,6 +655,11 @@ export default function JobDetail() {
   const [interviewDate, setInterviewDate] = useState("");
   const [recruiterName, setRecruiterName] = useState("");
   const [recruiterEmail, setRecruiterEmail] = useState("");
+  const [offerSalary, setOfferSalary] = useState("");
+  const [offerDate, setOfferDate] = useState("");
+  const [offerDeadline, setOfferDeadline] = useState("");
+  const [offerDecision, setOfferDecision] = useState("");
+  const [offerNotes, setOfferNotes] = useState("");
 
   // Apply dialog state
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
@@ -716,6 +723,11 @@ export default function JobDetail() {
       setInterviewDate((job as any).interviewDate ?? "");
       setRecruiterName((job as any).recruiterName ?? "");
       setRecruiterEmail((job as any).recruiterEmail ?? "");
+      setOfferSalary((job as any).offerSalary ?? "");
+      setOfferDate((job as any).offerDate ?? "");
+      setOfferDeadline((job as any).offerDeadline ?? "");
+      setOfferDecision((job as any).offerDecision ?? "");
+      setOfferNotes((job as any).offerNotes ?? "");
     }
   }, [job]);
 
@@ -1072,6 +1084,108 @@ export default function JobDetail() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Offer Details — shown only when status is Offer */}
+          {job.status === "Offer" && (
+            <Card data-testid="card-offer-details">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-medium flex items-center gap-1.5">
+                  <Trophy className="h-4 w-4 text-indigo-500" />
+                  Offer Details
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Offered Salary</Label>
+                    <Input
+                      value={offerSalary}
+                      onChange={e => setOfferSalary(e.target.value)}
+                      onBlur={() => {
+                        if (offerSalary !== ((job as any).offerSalary ?? "")) {
+                          updateJob.mutate({ offerSalary });
+                        }
+                      }}
+                      placeholder="e.g. 95000"
+                      className="h-8 text-xs"
+                      data-testid="input-offer-salary"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Decision</Label>
+                    <Select
+                      value={offerDecision || "Pending"}
+                      onValueChange={v => {
+                        setOfferDecision(v);
+                        updateJob.mutate({ offerDecision: v });
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs" data-testid="select-offer-decision">
+                        <SelectValue placeholder="Select decision" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {["Pending", "Accepted", "Rejected", "Negotiating", "Withdrawn"].map(d => (
+                          <SelectItem key={d} value={d}>{d}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Offer Date</Label>
+                    <Input
+                      type="date"
+                      value={offerDate}
+                      onChange={e => setOfferDate(e.target.value)}
+                      onBlur={() => {
+                        if (offerDate !== ((job as any).offerDate ?? "")) {
+                          updateJob.mutate({ offerDate });
+                        }
+                      }}
+                      className="h-8 text-xs"
+                      data-testid="input-offer-date"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Decision Deadline</Label>
+                    <Input
+                      type="date"
+                      value={offerDeadline}
+                      onChange={e => setOfferDeadline(e.target.value)}
+                      onBlur={() => {
+                        if (offerDeadline !== ((job as any).offerDeadline ?? "")) {
+                          updateJob.mutate({ offerDeadline });
+                        }
+                      }}
+                      className="h-8 text-xs"
+                      data-testid="input-offer-deadline"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Offer Notes</Label>
+                  <Textarea
+                    value={offerNotes}
+                    onChange={e => setOfferNotes(e.target.value)}
+                    onBlur={() => {
+                      if (offerNotes !== ((job as any).offerNotes ?? "")) {
+                        updateJob.mutate({ offerNotes });
+                      }
+                    }}
+                    placeholder="Benefits, equity, signing bonus, negotiation details..."
+                    rows={3}
+                    className="text-xs"
+                    data-testid="textarea-offer-notes"
+                  />
+                </div>
+                <div className="pt-1">
+                  <a href="/offers" className="text-xs text-primary hover:underline flex items-center gap-1">
+                    <DollarSign className="h-3 w-3" />
+                    View all offers in Offer Tracker
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <JobMatchAnalysis
             jobId={job.id}
