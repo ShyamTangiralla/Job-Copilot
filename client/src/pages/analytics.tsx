@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell, Legend, ReferenceLine,
-  PieChart, Pie, AreaChart, Area,
+  PieChart, Pie, AreaChart, Area, LabelList,
 } from "recharts";
 import {
   TrendingUp, Send, MessageSquare, Trophy, Target, Clock,
@@ -66,6 +66,16 @@ interface AnalyticsData {
   avgDaysAppliedToOffer: number | null;
   avgDaysAppliedToRecruiterContact: number | null;
   avgTotalHiringTimeline: number | null;
+  companyAnalytics: {
+    company: string;
+    applied: number;
+    interviews: number;
+    offers: number;
+    interviewRate: number;
+    offerRate: number;
+    avgResponseDays: number | null;
+    avgHiringDays: number | null;
+  }[];
   weeklyTrend: { week: string; applications: number; interviews: number }[];
 }
 
@@ -277,6 +287,7 @@ export default function AnalyticsPage() {
           <TabsTrigger value="salary" data-testid="tab-salary" className="text-xs">Salary</TabsTrigger>
           <TabsTrigger value="time" data-testid="tab-time" className="text-xs">Time</TabsTrigger>
           <TabsTrigger value="market" data-testid="tab-market" className="text-xs">Job Market</TabsTrigger>
+          <TabsTrigger value="companies" data-testid="tab-companies" className="text-xs">Companies</TabsTrigger>
         </TabsList>
 
         {/* ════════════════════════════════════════════════════════════════════
@@ -1286,6 +1297,186 @@ export default function AnalyticsPage() {
                   </CardContent>
                 </Card>
               )}
+            </>
+          )}
+        </TabsContent>
+
+        {/* ════════════════════════════════════════════════════════════════════
+            TAB 8 — COMPANY ANALYTICS
+        ════════════════════════════════════════════════════════════════════ */}
+        <TabsContent value="companies" className="space-y-4">
+          {!data || data.companyAnalytics.length === 0 ? (
+            <Card><CardContent className="pt-8 pb-8 text-center text-muted-foreground text-sm">No application data yet. Apply to jobs to see company analytics.</CardContent></Card>
+          ) : (
+            <>
+              {/* Summary KPI row */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Card>
+                  <CardContent className="pt-4 pb-4 px-4">
+                    <p className="text-xs text-muted-foreground">Companies Applied</p>
+                    <p className="text-2xl font-bold mt-0.5" data-testid="kpi-companies-applied">{data.companyAnalytics.length}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 pb-4 px-4">
+                    <p className="text-xs text-muted-foreground">Companies Interviewing</p>
+                    <p className="text-2xl font-bold mt-0.5" data-testid="kpi-companies-interviewing">{data.companyAnalytics.filter(c => c.interviews > 0).length}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 pb-4 px-4">
+                    <p className="text-xs text-muted-foreground">Companies w/ Offers</p>
+                    <p className="text-2xl font-bold mt-0.5" data-testid="kpi-companies-offers">{data.companyAnalytics.filter(c => c.offers > 0).length}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 pb-4 px-4">
+                    <p className="text-xs text-muted-foreground">Best Interview Rate</p>
+                    <p className="text-2xl font-bold mt-0.5" data-testid="kpi-best-interview-rate">
+                      {(() => {
+                        const best = [...data.companyAnalytics].filter(c => c.applied >= 2).sort((a, b) => b.interviewRate - a.interviewRate)[0];
+                        return best ? `${best.interviewRate}%` : "—";
+                      })()}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {(() => {
+                        const best = [...data.companyAnalytics].filter(c => c.applied >= 2).sort((a, b) => b.interviewRate - a.interviewRate)[0];
+                        return best ? best.company : "";
+                      })()}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Top companies by applications */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <CardTitle className="text-sm font-medium">Top Companies — Applications</CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-2 pb-4">
+                    <ResponsiveContainer width="100%" height={Math.max(180, Math.min(data.companyAnalytics.length, 10) * 28)}>
+                      <BarChart
+                        data={data.companyAnalytics.slice(0, 10)}
+                        layout="vertical"
+                        margin={{ top: 4, right: 48, left: 8, bottom: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
+                        <YAxis type="category" dataKey="company" tick={{ fontSize: 9 }} width={96} />
+                        <Tooltip content={<ChartTooltip />} />
+                        <Bar dataKey="applied" name="Applications" fill={PALETTE[0]} radius={[0, 3, 3, 0]} barSize={14}>
+                          <LabelList dataKey="applied" position="right" style={{ fontSize: 9, fill: "hsl(var(--foreground))" }} />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <CardTitle className="text-sm font-medium">Top Companies — Interviews</CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-2 pb-4">
+                    {(() => {
+                      const interviewing = [...data.companyAnalytics].filter(c => c.interviews > 0).sort((a, b) => b.interviews - a.interviews).slice(0, 10);
+                      return interviewing.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-8">No interviews recorded yet.</p>
+                      ) : (
+                        <ResponsiveContainer width="100%" height={Math.max(180, interviewing.length * 28)}>
+                          <BarChart data={interviewing} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                            <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
+                            <YAxis type="category" dataKey="company" tick={{ fontSize: 9 }} width={96} />
+                            <Tooltip content={<ChartTooltip />} />
+                            <Bar dataKey="interviews" name="Interviews" fill={PALETTE[2]} radius={[0, 3, 3, 0]} barSize={14}>
+                              <LabelList dataKey="interviews" position="right" style={{ fontSize: 9, fill: "hsl(var(--foreground))" }} />
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <CardTitle className="text-sm font-medium">Top Companies — Offers</CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-2 pb-4">
+                    {(() => {
+                      const withOffers = [...data.companyAnalytics].filter(c => c.offers > 0).sort((a, b) => b.offers - a.offers).slice(0, 10);
+                      return withOffers.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-8">No offers recorded yet.</p>
+                      ) : (
+                        <ResponsiveContainer width="100%" height={Math.max(180, withOffers.length * 28)}>
+                          <BarChart data={withOffers} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                            <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
+                            <YAxis type="category" dataKey="company" tick={{ fontSize: 9 }} width={96} />
+                            <Tooltip content={<ChartTooltip />} />
+                            <Bar dataKey="offers" name="Offers" fill="#10b981" radius={[0, 3, 3, 0]} barSize={14}>
+                              <LabelList dataKey="offers" position="right" style={{ fontSize: 9, fill: "hsl(var(--foreground))" }} />
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Full performance table */}
+              <Card>
+                <CardHeader className="pb-1 pt-4 px-4">
+                  <CardTitle className="text-sm font-medium">Company Performance Table</CardTitle>
+                  <p className="text-xs text-muted-foreground">All companies sorted by applications. Response time = days applied → interview. Hiring timeline = days applied → decision.</p>
+                </CardHeader>
+                <CardContent className="px-0 pb-2">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left px-4 py-2 font-medium text-muted-foreground">Company</th>
+                          <th className="text-center px-3 py-2 font-medium text-muted-foreground">Applied</th>
+                          <th className="text-center px-3 py-2 font-medium text-muted-foreground">Interviews</th>
+                          <th className="text-center px-3 py-2 font-medium text-muted-foreground">Interview Rate</th>
+                          <th className="text-center px-3 py-2 font-medium text-muted-foreground">Offers</th>
+                          <th className="text-center px-3 py-2 font-medium text-muted-foreground">Offer Rate</th>
+                          <th className="text-center px-3 py-2 font-medium text-muted-foreground">Avg Response</th>
+                          <th className="text-center px-3 py-2 font-medium text-muted-foreground">Avg Timeline</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.companyAnalytics.map((c, i) => (
+                          <tr key={c.company} className={i % 2 === 0 ? "bg-muted/30" : ""} data-testid={`row-company-${i}`}>
+                            <td className="px-4 py-2 font-medium">{c.company}</td>
+                            <td className="px-3 py-2 text-center" data-testid={`cell-applied-${i}`}>{c.applied}</td>
+                            <td className="px-3 py-2 text-center" data-testid={`cell-interviews-${i}`}>{c.interviews}</td>
+                            <td className="px-3 py-2 text-center">
+                              <span className={`px-1.5 py-0.5 rounded font-medium ${c.interviewRate >= 30 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400" : c.interviewRate >= 10 ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400" : "bg-muted text-muted-foreground"}`}>
+                                {c.interviewRate}%
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-center" data-testid={`cell-offers-${i}`}>{c.offers}</td>
+                            <td className="px-3 py-2 text-center">
+                              <span className={`px-1.5 py-0.5 rounded font-medium ${c.offerRate > 0 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400" : "bg-muted text-muted-foreground"}`}>
+                                {c.offerRate}%
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-center text-muted-foreground">
+                              {c.avgResponseDays !== null ? `${c.avgResponseDays}d` : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-center text-muted-foreground">
+                              {c.avgHiringDays !== null ? `${c.avgHiringDays}d` : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
             </>
           )}
         </TabsContent>

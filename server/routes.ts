@@ -2421,6 +2421,47 @@ export async function registerRoutes(
         ? Math.round(appliedToDecision.reduce((a, b) => a + b, 0) / appliedToDecision.length)
         : null;
 
+      // ── Company Analytics ─────────────────────────────────────────────────────
+      const coStatsMap: Record<string, {
+        applied: number; interviews: number; offers: number;
+        responseDays: number[]; hiringDays: number[];
+      }> = {};
+      for (const j of applied) {
+        const co = (j.company || "Unknown").trim();
+        if (!coStatsMap[co]) coStatsMap[co] = { applied: 0, interviews: 0, offers: 0, responseDays: [], hiringDays: [] };
+        coStatsMap[co].applied++;
+        if (INTERVIEW_STATUSES.has(j.status)) coStatsMap[co].interviews++;
+        if (j.status === "Offer") coStatsMap[co].offers++;
+        // response time: applied → interview
+        const intDate = (j as any).interviewDate;
+        if (j.dateApplied && intDate) {
+          const d = (new Date(intDate).getTime() - new Date(j.dateApplied).getTime()) / 86400000;
+          if (d >= 0 && d < 365) coStatsMap[co].responseDays.push(d);
+        }
+        // hiring timeline: applied → decisionDate or offerDate
+        const endDate = (j as any).decisionDate || (j as any).offerDate;
+        if (j.dateApplied && endDate) {
+          const d = (new Date(endDate).getTime() - new Date(j.dateApplied).getTime()) / 86400000;
+          if (d >= 0 && d < 730) coStatsMap[co].hiringDays.push(d);
+        }
+      }
+      const companyAnalytics = Object.entries(coStatsMap)
+        .map(([company, v]) => ({
+          company,
+          applied: v.applied,
+          interviews: v.interviews,
+          offers: v.offers,
+          interviewRate: v.applied > 0 ? Math.round((v.interviews / v.applied) * 100) : 0,
+          offerRate: v.applied > 0 ? Math.round((v.offers / v.applied) * 100) : 0,
+          avgResponseDays: v.responseDays.length > 0
+            ? Math.round(v.responseDays.reduce((a, b) => a + b, 0) / v.responseDays.length)
+            : null,
+          avgHiringDays: v.hiringDays.length > 0
+            ? Math.round(v.hiringDays.reduce((a, b) => a + b, 0) / v.hiringDays.length)
+            : null,
+        }))
+        .sort((a, b) => b.applied - a.applied);
+
       // ── Combined weekly trends (apps + interviews on same chart) ──────────────
       const weeklyTrend = applicationsPerWeek.map((w, i) => ({
         week: w.week,
@@ -2609,6 +2650,7 @@ export async function registerRoutes(
         avgDaysAppliedToOffer,
         avgDaysAppliedToRecruiterContact,
         avgTotalHiringTimeline,
+        companyAnalytics,
         weeklyTrend,
       });
     } catch (e: any) {
