@@ -49,12 +49,13 @@ import {
   Loader2,
   Trophy,
   DollarSign,
+  Globe,
 } from "lucide-react";
 import { exportResumePdf } from "@/lib/export-resume";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Job, CandidateProfile, Resume, ApplicationAnswer, ResumeVersion, JobNote } from "@shared/schema";
-import { APPLICATION_STATUSES, PRIORITIES } from "@shared/schema";
+import { APPLICATION_STATUSES, PRIORITIES, JOB_SOURCES } from "@shared/schema";
 import { useState, useEffect, useMemo } from "react";
 import {
   Dialog as ApplyDialog,
@@ -665,6 +666,7 @@ export default function JobDetail() {
   const [salaryMax, setSalaryMax] = useState("");
   const [recruiterContactDate, setRecruiterContactDate] = useState("");
   const [decisionDate, setDecisionDate] = useState("");
+  const [jobSource, setJobSource] = useState("");
 
   // Structured note texts by type
   const [noteTexts, setNoteTexts] = useState<Record<string, string>>({
@@ -777,6 +779,7 @@ export default function JobDetail() {
       setSalaryMax((job as any).salaryMax?.toString() ?? "");
       setRecruiterContactDate((job as any).recruiterContactDate ?? "");
       setDecisionDate((job as any).decisionDate ?? "");
+      setJobSource(job.source ?? "");
     }
   }, [job]);
 
@@ -933,6 +936,12 @@ export default function JobDetail() {
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
+        {job.source && (
+          <Badge variant="outline" className="text-xs gap-1" data-testid="badge-job-source">
+            <Globe className="h-3 w-3" />
+            {job.source}
+          </Badge>
+        )}
         {job.roleClassification && job.roleClassification !== "Unknown" && (
           <Badge variant="secondary">{job.roleClassification}</Badge>
         )}
@@ -1088,6 +1097,32 @@ export default function JobDetail() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* Job Source */}
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Globe className="h-3 w-3" />
+                  Job Source
+                </Label>
+                <Select
+                  value={jobSource || "__none__"}
+                  onValueChange={(v) => {
+                    const val = v === "__none__" ? "" : v;
+                    setJobSource(val);
+                    updateJob.mutate({ source: val });
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs" data-testid="select-job-source">
+                    <SelectValue placeholder="Where did you find this job?" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— Not set —</SelectItem>
+                    {JOB_SOURCES.map(s => (
+                      <SelectItem key={s} value={s} data-testid={`option-source-${s.toLowerCase().replace(/\s+/g, "-")}`}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Date Applied</Label>

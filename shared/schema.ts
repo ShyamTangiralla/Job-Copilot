@@ -321,5 +321,16 @@ export const ROLE_TYPES = ["Data Analyst", "Healthcare Data Analyst", "Healthcar
 export const FIT_LABELS = ["Strong Match", "Possible Match", "Weak Match"] as const;
 export const WORK_MODES = ["Remote", "Hybrid", "Onsite"] as const;
 export const PRIORITIES = ["High", "Medium", "Low"] as const;
+export const JOB_SOURCES = [
+  "LinkedIn",
+  "Indeed",
+  "Dice",
+  "Company Website",
+  "Referral",
+  "Recruiter",
+  "Other",
+] as const;
+export type JobSource = typeof JOB_SOURCES[number];
+
 export const FRESHNESS_LABELS = ["Fresh 24h", "Fresh 48h", "Fresh 72h", "Fresh 7d", "Unknown Date"] as const;
 export const APPLY_PRIORITY_LABELS = ["Apply Immediately", "High Priority", "Medium Priority", "Low Priority"] as const;
