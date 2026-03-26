@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Trophy,
   Users,
+  PieChart,
 } from "lucide-react";
 import {
   Sidebar,
@@ -42,6 +43,7 @@ const navItems = [
   { title: "Networking", url: "/networking", icon: Users },
   { title: "Tracker", url: "/tracker", icon: BarChart3 },
   { title: "Analytics", url: "/analytics", icon: LineChart },
+  { title: "Job Search Summary", url: "/summary", icon: PieChart },
   { title: "Export Center", url: "/export", icon: Download },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
