@@ -6,11 +6,13 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Settings as SettingsIcon, Plus, X, RefreshCw, Target, Sparkles, Brain, FileText, BarChart3, Upload, Trash2, Download, FileDown } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Settings as SettingsIcon, Plus, X, RefreshCw, Target, Sparkles, Brain, FileText, BarChart3, Upload, Trash2, Download, FileDown, SlidersHorizontal } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 import type { Settings as SettingsType } from "@shared/schema";
+import { JOB_SOURCES } from "@shared/schema";
 
 interface SettingsData {
   roleCategories: string[];
@@ -28,6 +30,19 @@ interface ScoringWeights {
   resumeMatch: number;
 }
 
+interface UserPreferences {
+  defaultJobSource: string;
+  defaultPriority: string;
+  expectedSalaryMin: number | null;
+  expectedSalaryMax: number | null;
+  salaryCurrency: string;
+  weeklyApplicationTarget: number;
+  followUpReminderDays: number;
+}
+
+const PRIORITY_OPTIONS = ["High", "Medium", "Low"] as const;
+const CURRENCY_OPTIONS = ["USD", "CAD", "GBP", "EUR", "INR", "AUD"] as const;
+
 export default function SettingsPage() {
   const { toast } = useToast();
   const [newRole, setNewRole] = useState("");
@@ -36,6 +51,15 @@ export default function SettingsPage() {
   const [weights, setWeights] = useState<ScoringWeights>({
     roleMatch: 25, freshness: 20, experienceLevel: 15, keywordMatch: 15, location: 15, sourceQuality: 5, resumeMatch: 5,
   });
+  const [prefs, setPrefs] = useState<UserPreferences>({
+    defaultJobSource: "",
+    defaultPriority: "Medium",
+    expectedSalaryMin: null,
+    expectedSalaryMax: null,
+    salaryCurrency: "USD",
+    weeklyApplicationTarget: 5,
+    followUpReminderDays: 7,
+  });
 
   const { data: settings, isLoading } = useQuery<SettingsData>({
     queryKey: ["/api/settings"],
@@ -43,6 +67,10 @@ export default function SettingsPage() {
 
   const { data: savedWeights } = useQuery<ScoringWeights>({
     queryKey: ["/api/scoring-weights"],
+  });
+
+  const { data: savedPrefs } = useQuery<UserPreferences>({
+    queryKey: ["/api/user-preferences"],
   });
 
   const { data: aiUsage } = useQuery<{ total: number; byFeature: Record<string, number> }>({
@@ -95,6 +123,24 @@ export default function SettingsPage() {
   useEffect(() => {
     if (savedWeights) setWeights(savedWeights);
   }, [savedWeights]);
+
+  useEffect(() => {
+    if (savedPrefs) setPrefs(savedPrefs);
+  }, [savedPrefs]);
+
+  const updatePreferences = useMutation({
+    mutationFn: async (data: UserPreferences) => {
+      const res = await apiRequest("PUT", "/api/user-preferences", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user-preferences"] });
+      toast({ title: "Preferences saved" });
+    },
+    onError: (e: any) => {
+      toast({ title: "Failed to save preferences", description: e.message, variant: "destructive" });
+    },
+  });
 
   const updateSettings = useMutation({
     mutationFn: async (data: SettingsData) => {
@@ -161,6 +207,141 @@ export default function SettingsPage() {
           Manage role categories, sources, and application statuses.
         </p>
       </div>
+
+      {/* ── Job Search Preferences ──────────────────────────────────── */}
+      <Card data-testid="card-user-preferences">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-medium flex items-center gap-2">
+            <SlidersHorizontal className="h-4 w-4" />
+            Job Search Preferences
+          </CardTitle>
+          <CardDescription>
+            Default values used when adding new jobs, and targets for your weekly activity.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* Row 1: Default Source + Default Priority */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="pref-source">Default Job Source</Label>
+              <Select
+                value={prefs.defaultJobSource || "__none__"}
+                onValueChange={(v) => setPrefs({ ...prefs, defaultJobSource: v === "__none__" ? "" : v })}
+              >
+                <SelectTrigger id="pref-source" data-testid="select-default-source">
+                  <SelectValue placeholder="None (select manually)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None (select manually)</SelectItem>
+                  {JOB_SOURCES.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">Pre-filled when adding a new job.</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="pref-priority">Default Priority</Label>
+              <Select
+                value={prefs.defaultPriority}
+                onValueChange={(v) => setPrefs({ ...prefs, defaultPriority: v })}
+              >
+                <SelectTrigger id="pref-priority" data-testid="select-default-priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRIORITY_OPTIONS.map((p) => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">Applied to new jobs automatically.</p>
+            </div>
+          </div>
+
+          {/* Row 2: Salary Range */}
+          <div className="space-y-1.5">
+            <Label>Expected Salary Range</Label>
+            <div className="flex items-center gap-2">
+              <Select
+                value={prefs.salaryCurrency}
+                onValueChange={(v) => setPrefs({ ...prefs, salaryCurrency: v })}
+              >
+                <SelectTrigger className="w-24 shrink-0" data-testid="select-salary-currency">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CURRENCY_OPTIONS.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                type="number"
+                min={0}
+                placeholder="Min salary"
+                value={prefs.expectedSalaryMin ?? ""}
+                onChange={(e) => setPrefs({ ...prefs, expectedSalaryMin: e.target.value ? parseInt(e.target.value) : null })}
+                data-testid="input-salary-min"
+              />
+              <span className="text-muted-foreground text-sm shrink-0">to</span>
+              <Input
+                type="number"
+                min={0}
+                placeholder="Max salary"
+                value={prefs.expectedSalaryMax ?? ""}
+                onChange={(e) => setPrefs({ ...prefs, expectedSalaryMax: e.target.value ? parseInt(e.target.value) : null })}
+                data-testid="input-salary-max"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">Used in Salary Analytics for benchmarking your target range.</p>
+          </div>
+
+          {/* Row 3: Weekly Target + Follow-up Days */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="pref-weekly-target">Weekly Application Target</Label>
+              <Input
+                id="pref-weekly-target"
+                type="number"
+                min={1}
+                max={50}
+                value={prefs.weeklyApplicationTarget}
+                onChange={(e) => setPrefs({ ...prefs, weeklyApplicationTarget: parseInt(e.target.value) || 1 })}
+                data-testid="input-weekly-target"
+              />
+              <p className="text-xs text-muted-foreground">Used in your Job Search Score (current target: 8/week).</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="pref-followup-days">Follow-up Reminder Days</Label>
+              <Input
+                id="pref-followup-days"
+                type="number"
+                min={1}
+                max={60}
+                value={prefs.followUpReminderDays}
+                onChange={(e) => setPrefs({ ...prefs, followUpReminderDays: parseInt(e.target.value) || 7 })}
+                data-testid="input-followup-days"
+              />
+              <p className="text-xs text-muted-foreground">Days after applying before a follow-up is suggested.</p>
+            </div>
+          </div>
+
+          <div className="pt-1 flex justify-end">
+            <Button
+              onClick={() => updatePreferences.mutate(prefs)}
+              disabled={updatePreferences.isPending}
+              data-testid="button-save-preferences"
+            >
+              {updatePreferences.isPending ? "Saving…" : "Save Preferences"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Separator />
 
       <Card>
         <CardHeader className="pb-3">

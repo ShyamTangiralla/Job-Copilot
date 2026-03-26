@@ -1231,6 +1231,26 @@ export async function registerRoutes(
     }
   });
 
+  // ─── User Preferences ──────────────────────────────────────────────────────────
+  app.get("/api/user-preferences", async (_req, res) => {
+    try {
+      const prefs = await storage.getUserPreferences();
+      res.json(prefs);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/user-preferences", async (req, res) => {
+    try {
+      await storage.updateUserPreferences(req.body);
+      const prefs = await storage.getUserPreferences();
+      res.json(prefs);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
   app.post("/api/discovery/run", async (_req, res) => {
     try {
       if (isDiscoveryRunning()) {

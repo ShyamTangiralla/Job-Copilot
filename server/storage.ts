@@ -447,6 +447,39 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async getUserPreferences(): Promise<{
+    defaultJobSource: string;
+    defaultPriority: string;
+    expectedSalaryMin: number | null;
+    expectedSalaryMax: number | null;
+    salaryCurrency: string;
+    weeklyApplicationTarget: number;
+    followUpReminderDays: number;
+  }> {
+    const rows = await db.select().from(settings).where(eq(settings.key, "userPreferences"));
+    if (rows.length === 0) {
+      return {
+        defaultJobSource: "",
+        defaultPriority: "Medium",
+        expectedSalaryMin: null,
+        expectedSalaryMax: null,
+        salaryCurrency: "USD",
+        weeklyApplicationTarget: 5,
+        followUpReminderDays: 7,
+      };
+    }
+    return rows[0].value as any;
+  }
+
+  async updateUserPreferences(data: any): Promise<void> {
+    const existing = await db.select().from(settings).where(eq(settings.key, "userPreferences"));
+    if (existing.length === 0) {
+      await db.insert(settings).values({ key: "userPreferences", value: data });
+    } else {
+      await db.update(settings).set({ value: data }).where(eq(settings.key, "userPreferences"));
+    }
+  }
+
   async createDiscoveryRun(data: InsertDiscoveryRun): Promise<DiscoveryRun> {
     const [created] = await db.insert(discoveryRuns).values(data).returning();
     return created;
