@@ -76,6 +76,14 @@ interface AnalyticsData {
     avgResponseDays: number | null;
     avgHiringDays: number | null;
   }[];
+  weeklyActivity: {
+    week: string;
+    applications: number;
+    interviews: number;
+    rejections: number;
+    networkingContacts: number;
+    followUps: number;
+  }[];
   weeklyTrend: { week: string; applications: number; interviews: number }[];
 }
 
@@ -288,6 +296,7 @@ export default function AnalyticsPage() {
           <TabsTrigger value="time" data-testid="tab-time" className="text-xs">Time</TabsTrigger>
           <TabsTrigger value="market" data-testid="tab-market" className="text-xs">Job Market</TabsTrigger>
           <TabsTrigger value="companies" data-testid="tab-companies" className="text-xs">Companies</TabsTrigger>
+          <TabsTrigger value="activity" data-testid="tab-activity" className="text-xs">Weekly Activity</TabsTrigger>
         </TabsList>
 
         {/* ════════════════════════════════════════════════════════════════════
@@ -1469,6 +1478,194 @@ export default function AnalyticsPage() {
                             </td>
                             <td className="px-3 py-2 text-center text-muted-foreground">
                               {c.avgHiringDays !== null ? `${c.avgHiringDays}d` : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </TabsContent>
+
+        {/* ════════════════════════════════════════════════════════════════════
+            TAB 9 — WEEKLY ACTIVITY
+        ════════════════════════════════════════════════════════════════════ */}
+        <TabsContent value="activity" className="space-y-4">
+          {!data ? (
+            <Card><CardContent className="pt-8 pb-8 text-center text-muted-foreground text-sm">Loading activity data…</CardContent></Card>
+          ) : (
+            <>
+              {/* ── KPI Summary Row ─────────────────────────────────────────── */}
+              {(() => {
+                const totals = (data.weeklyActivity ?? []).reduce(
+                  (acc, w) => ({
+                    applications: acc.applications + w.applications,
+                    interviews: acc.interviews + w.interviews,
+                    rejections: acc.rejections + w.rejections,
+                    networkingContacts: acc.networkingContacts + w.networkingContacts,
+                    followUps: acc.followUps + w.followUps,
+                  }),
+                  { applications: 0, interviews: 0, rejections: 0, networkingContacts: 0, followUps: 0 }
+                );
+                const totalOffers = (data.offersPerMonth ?? []).reduce((s, o) => s + o.count, 0);
+                const avgAppsPerWeek = (data.weeklyActivity ?? []).length > 0
+                  ? (totals.applications / (data.weeklyActivity ?? []).length).toFixed(1)
+                  : "0";
+                return (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                    {[
+                      { label: "Applications", value: totals.applications, sub: `${avgAppsPerWeek}/wk avg`, color: "text-blue-600 dark:text-blue-400", testId: "kpi-act-apps" },
+                      { label: "Interviews", value: totals.interviews, sub: "last 16 weeks", color: "text-violet-600 dark:text-violet-400", testId: "kpi-act-interviews" },
+                      { label: "Rejections", value: totals.rejections, sub: "last 16 weeks", color: "text-red-500 dark:text-red-400", testId: "kpi-act-rejections" },
+                      { label: "Offers", value: totalOffers, sub: "all time", color: "text-emerald-600 dark:text-emerald-400", testId: "kpi-act-offers" },
+                      { label: "Networking", value: totals.networkingContacts, sub: "contacts added", color: "text-amber-600 dark:text-amber-400", testId: "kpi-act-networking" },
+                      { label: "Follow-Ups", value: totals.followUps, sub: "last 16 weeks", color: "text-cyan-600 dark:text-cyan-400", testId: "kpi-act-followups" },
+                    ].map(k => (
+                      <Card key={k.label}>
+                        <CardContent className="pt-4 pb-4 px-4">
+                          <p className="text-xs text-muted-foreground">{k.label}</p>
+                          <p className={`text-2xl font-bold mt-0.5 ${k.color}`} data-testid={k.testId}>{k.value}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{k.sub}</p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* ── Main multi-metric weekly chart ───────────────────────────── */}
+              <Card>
+                <CardHeader className="pb-1 pt-4 px-4">
+                  <CardTitle className="text-sm font-medium">Weekly Activity — Last 16 Weeks</CardTitle>
+                  <p className="text-xs text-muted-foreground">Applications, interviews, rejections, networking contacts, and follow-ups by week</p>
+                </CardHeader>
+                <CardContent className="px-2 pb-4">
+                  {(data.weeklyActivity ?? []).length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-8">No activity yet.</p>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={(data.weeklyActivity ?? []).map(w => ({ ...w, week: fmtWeek(w.week) }))} margin={{ top: 8, right: 24, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis dataKey="week" tick={{ fontSize: 9 }} interval={1} />
+                        <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                        <Tooltip content={<ChartTooltip />} />
+                        <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
+                        <Line type="monotone" dataKey="applications" name="Applications" stroke={PALETTE[0]} strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="interviews" name="Interviews" stroke={PALETTE[2]} strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="rejections" name="Rejections" stroke="#ef4444" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="networkingContacts" name="Networking" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="followUps" name="Follow-Ups" stroke="#06b6d4" strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* ── Separate charts row ──────────────────────────────────────── */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Applications vs Rejections per week */}
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <CardTitle className="text-sm font-medium">Applications vs Rejections per Week</CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-2 pb-4">
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={(data.weeklyActivity ?? []).map(w => ({ ...w, week: fmtWeek(w.week) }))} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis dataKey="week" tick={{ fontSize: 8 }} interval={1} />
+                        <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                        <Tooltip content={<ChartTooltip />} />
+                        <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
+                        <Bar dataKey="applications" name="Applications" fill={PALETTE[0]} radius={[2, 2, 0, 0]} barSize={10} />
+                        <Bar dataKey="rejections" name="Rejections" fill="#ef4444" radius={[2, 2, 0, 0]} barSize={10} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                {/* Offers per Month */}
+                <Card>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <CardTitle className="text-sm font-medium">Offers per Month</CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-2 pb-4">
+                    {(data.offersPerMonth ?? []).every(o => o.count === 0) ? (
+                      <p className="text-xs text-muted-foreground text-center py-8">No offers recorded yet.</p>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={data.offersPerMonth} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                          <XAxis dataKey="month" tick={{ fontSize: 9 }} />
+                          <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                          <Tooltip content={<ChartTooltip />} />
+                          <Bar dataKey="count" name="Offers" fill="#10b981" radius={[3, 3, 0, 0]} barSize={20} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* ── Networking & Follow-Ups per Week ─────────────────────────── */}
+              <Card>
+                <CardHeader className="pb-1 pt-4 px-4">
+                  <CardTitle className="text-sm font-medium">Networking Contacts Added &amp; Follow-Ups per Week</CardTitle>
+                  <p className="text-xs text-muted-foreground">Contacts added = new people added to your Networking Tracker · Follow-ups = last contact date logged that week</p>
+                </CardHeader>
+                <CardContent className="px-2 pb-4">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={(data.weeklyActivity ?? []).map(w => ({ ...w, week: fmtWeek(w.week) }))} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="week" tick={{ fontSize: 8 }} interval={1} />
+                      <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
+                      <Bar dataKey="networkingContacts" name="Contacts Added" fill="#f59e0b" radius={[2, 2, 0, 0]} barSize={10} />
+                      <Bar dataKey="followUps" name="Follow-Ups" fill="#06b6d4" radius={[2, 2, 0, 0]} barSize={10} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              {/* ── Weekly breakdown table ───────────────────────────────────── */}
+              <Card>
+                <CardHeader className="pb-1 pt-4 px-4">
+                  <CardTitle className="text-sm font-medium">Week-by-Week Breakdown</CardTitle>
+                </CardHeader>
+                <CardContent className="px-0 pb-2">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left px-4 py-2 font-medium text-muted-foreground">Week of</th>
+                          <th className="text-center px-3 py-2 font-medium text-muted-foreground">Applications</th>
+                          <th className="text-center px-3 py-2 font-medium text-muted-foreground">Interviews</th>
+                          <th className="text-center px-3 py-2 font-medium text-muted-foreground">Rejections</th>
+                          <th className="text-center px-3 py-2 font-medium text-muted-foreground">Networking</th>
+                          <th className="text-center px-3 py-2 font-medium text-muted-foreground">Follow-Ups</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...(data.weeklyActivity ?? [])].reverse().map((w, i) => (
+                          <tr key={w.week} className={i % 2 === 0 ? "bg-muted/30" : ""} data-testid={`row-activity-${i}`}>
+                            <td className="px-4 py-2 font-medium">{fmtWeek(w.week)}</td>
+                            <td className="px-3 py-2 text-center">
+                              {w.applications > 0 ? <span className="font-semibold text-blue-600 dark:text-blue-400">{w.applications}</span> : <span className="text-muted-foreground">—</span>}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              {w.interviews > 0 ? <span className="font-semibold text-violet-600 dark:text-violet-400">{w.interviews}</span> : <span className="text-muted-foreground">—</span>}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              {w.rejections > 0 ? <span className="font-semibold text-red-500 dark:text-red-400">{w.rejections}</span> : <span className="text-muted-foreground">—</span>}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              {w.networkingContacts > 0 ? <span className="font-semibold text-amber-600 dark:text-amber-400">{w.networkingContacts}</span> : <span className="text-muted-foreground">—</span>}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              {w.followUps > 0 ? <span className="font-semibold text-cyan-600 dark:text-cyan-400">{w.followUps}</span> : <span className="text-muted-foreground">—</span>}
                             </td>
                           </tr>
                         ))}

@@ -1943,9 +1943,10 @@ export async function registerRoutes(
 
   app.get("/api/analytics", async (req, res) => {
     try {
-      const [allJobs, allVersions] = await Promise.all([
+      const [allJobs, allVersions, allContacts] = await Promise.all([
         storage.getJobs(),
         storage.getResumeVersions(),
+        storage.getContacts(),
       ]);
 
       const APPLIED_STATUSES = new Set(["Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response"]);
@@ -2462,6 +2463,53 @@ export async function registerRoutes(
         }))
         .sort((a, b) => b.applied - a.applied);
 
+      // ── Weekly Activity (16-week window, same keys as applicationsPerWeek) ──────
+      // Helper: get Monday-anchored ISO week key for any date string
+      const toWeekKey = (dateStr: string): string | null => {
+        if (!dateStr) return null;
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return null;
+        const mon = new Date(d);
+        mon.setDate(d.getDate() - d.getDay() + 1);
+        return mon.toISOString().split("T")[0];
+      };
+
+      // Rejections per week
+      const rejWeekMap: Record<string, number> = {};
+      for (const key of Object.keys(weekMap)) rejWeekMap[key] = 0;
+      for (const j of allJobs) {
+        if (j.status !== "Rejected" || !j.dateApplied) continue;
+        const key = toWeekKey(j.dateApplied);
+        if (key && key in rejWeekMap) rejWeekMap[key]++;
+      }
+
+      // Networking contacts added per week (by createdAt)
+      const netWeekMap: Record<string, number> = {};
+      for (const key of Object.keys(weekMap)) netWeekMap[key] = 0;
+      for (const c of allContacts) {
+        const key = toWeekKey(c.createdAt instanceof Date ? c.createdAt.toISOString() : String(c.createdAt));
+        if (key && key in netWeekMap) netWeekMap[key]++;
+      }
+
+      // Follow-ups per week (by lastContactDate)
+      const followUpWeekMap: Record<string, number> = {};
+      for (const key of Object.keys(weekMap)) followUpWeekMap[key] = 0;
+      for (const c of allContacts) {
+        if (!c.lastContactDate) continue;
+        const key = toWeekKey(c.lastContactDate);
+        if (key && key in followUpWeekMap) followUpWeekMap[key]++;
+      }
+
+      // Merge all weekly metrics into one combined series (sorted by week)
+      const weeklyActivity = applicationsPerWeek.map(({ week, count: applications }, i) => ({
+        week,
+        applications,
+        interviews: interviewsPerWeek[i]?.count ?? 0,
+        rejections: rejWeekMap[week] ?? 0,
+        networkingContacts: netWeekMap[week] ?? 0,
+        followUps: followUpWeekMap[week] ?? 0,
+      }));
+
       // ── Combined weekly trends (apps + interviews on same chart) ──────────────
       const weeklyTrend = applicationsPerWeek.map((w, i) => ({
         week: w.week,
@@ -2651,6 +2699,7 @@ export async function registerRoutes(
         avgDaysAppliedToRecruiterContact,
         avgTotalHiringTimeline,
         companyAnalytics,
+        weeklyActivity,
         weeklyTrend,
       });
     } catch (e: any) {
