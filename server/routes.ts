@@ -1788,7 +1788,9 @@ export async function registerRoutes(
         return res.status(400).json({ message: "jobs must be a non-empty array" });
       }
 
-      console.log(`[LinkedIn Import] ── Starting import of ${jobs.length} jobs ──`);
+      console.log(`[LinkedIn Import] ════════════════════════════════════════`);
+      console.log(`[LinkedIn Import] Starting import batch — ${jobs.length} jobs received`);
+      console.log(`[LinkedIn Import] ════════════════════════════════════════`);
 
       // ── Log the first received job immediately so we can see what the
       // frontend sent and verify field names before any processing ──────────
@@ -2140,14 +2142,16 @@ export async function registerRoutes(
         }
       }
 
-      console.log(`[LinkedIn Import] ── Batch summary (${jobs.length} received) ──`);
-      console.log(`[LinkedIn Import]   inserted     = ${imported}`);
-      console.log(`[LinkedIn Import]   repaired     = ${repaired}`);
-      console.log(`[LinkedIn Import]   duplicates   = ${duplicates}`);
-      console.log(`[LinkedIn Import]   failed       = ${failed}`);
-      console.log(`[LinkedIn Import]   insufficient = ${insufficient}`);
-      console.log(`[LinkedIn Import]   junk         = ${junk}`);
-      console.log(`[LinkedIn Import]   missing IDs  = ${missingIds}`);
+      console.log(`[LinkedIn Import] ════════════════════════════════════════`);
+      console.log(`[LinkedIn Import] BATCH COMPLETE`);
+      console.log(`[LinkedIn Import]   Jobs received from frontend : ${jobs.length}`);
+      console.log(`[LinkedIn Import]   Jobs inserted (new)         : ${imported}`);
+      console.log(`[LinkedIn Import]   Jobs updated (repair)       : ${repaired}`);
+      console.log(`[LinkedIn Import]   Jobs skipped as duplicates  : ${duplicates}`);
+      console.log(`[LinkedIn Import]   Jobs skipped (invalid/junk) : ${junk}`);
+      console.log(`[LinkedIn Import]   Jobs skipped (missing fields): ${insufficient}`);
+      console.log(`[LinkedIn Import]   Errors                      : ${failed}`);
+      console.log(`[LinkedIn Import] ════════════════════════════════════════`);
       if (skipLog.length > 0) {
         console.log(`[LinkedIn Import] ── Skip log (up to ${MAX_DETAIL}) ──`);
         skipLog.forEach((s, i) => console.log(`[LinkedIn Import]   [${i + 1}] ${s.title} → ${s.reason}`));

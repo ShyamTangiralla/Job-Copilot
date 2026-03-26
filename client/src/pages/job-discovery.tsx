@@ -205,6 +205,8 @@ export default function JobDiscovery() {
   const [liImportSummary, setLiImportSummary] = useState<{
     imported: number; duplicates: number; failed: number; repaired: number;
     insufficient: number; junk: number; missingIds: number; rawCount: number;
+    scrapedCount: number;
+    sentCount: number;
     scanBatchLabel?: string;
     skipLog?: { title: string; reason: string }[];
   } | null>(null);
@@ -290,7 +292,7 @@ export default function JobDiscovery() {
     mutationFn: (jobs: LinkedInJobResult[]) =>
       apiRequest("POST", "/api/import-linkedin-jobs", { jobs }).then((r) => r.json()),
     onSuccess: (data: { imported: number; duplicates: number; failed: number; repaired: number; insufficient: number; junk?: number; missingIds: number; rawCount: number; scanBatchLabel: string; skipLog?: { title: string; reason: string }[] }) => {
-      setLiImportSummary({ ...data, junk: data.junk ?? 0 });
+      setLiImportSummary({ ...data, junk: data.junk ?? 0, scrapedCount: liResults.length, sentCount: data.rawCount });
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       const parts: string[] = [];
       if (data.imported > 0)            parts.push(`${data.imported} imported`);
@@ -319,11 +321,10 @@ export default function JobDiscovery() {
     if (liResults.length === 0 || importProgress) return;
 
     // Rank all results: freshness tier first (24h > 48h > 7d > old), then by fit score.
-    // Only include 7d/old jobs if the user has explicitly enabled "show older jobs".
+    // ALL results are imported regardless of age — freshness only controls sort order.
     const TIER_ORDER: Record<string, number> = { "24h": 0, "48h": 1, "7d": 2, "old": 3 };
     const ranked = [...liResults]
       .map((job) => ({ job, score: computePreviewScore(job, liRoles), freshTier: getFreshnessTier(job.datePosted) }))
-      .filter(({ freshTier }) => liShowOlderJobs || freshTier === "24h" || freshTier === "48h")
       .sort((a, b) => {
         const tierDiff = (TIER_ORDER[a.freshTier] ?? 3) - (TIER_ORDER[b.freshTier] ?? 3);
         if (tierDiff !== 0) return tierDiff;
@@ -337,6 +338,8 @@ export default function JobDiscovery() {
     const accumulated = {
       imported: 0, duplicates: 0, failed: 0, repaired: 0,
       insufficient: 0, junk: 0, missingIds: 0, rawCount: 0,
+      scrapedCount: liResults.length,
+      sentCount: toImport.length,
       scanBatchLabel: "",
       skipLog: [] as { title: string; reason: string }[],
     };
@@ -346,16 +349,23 @@ export default function JobDiscovery() {
       const done  = start + batch.length;
       setImportProgress({ done, total: toImport.length, batchLabel: `Importing top-priority jobs ${start + 1}–${done} of ${toImport.length}` });
 
+      // Trim descriptions to 8000 chars to keep payload under the server body limit
+      const batchPayload = batch.map((j: any) => ({
+        ...j,
+        description: typeof j.description === "string" ? j.description.slice(0, 8000) : j.description,
+      }));
+
       // Log the first job of the first batch so we can see what's being sent
       if (start === 0 && batch.length > 0) {
         console.log("[LI Import] Sending first batch to backend:", {
           batchSize: batch.length,
-          firstJob: batch[0],
+          firstJob: { title: batch[0]?.title, company: batch[0]?.company, datePosted: batch[0]?.datePosted },
+          payloadEstimateKB: Math.round(JSON.stringify(batchPayload).length / 1024),
         });
       }
 
       try {
-        const r    = await apiRequest("POST", "/api/import-linkedin-jobs", { jobs: batch });
+        const r    = await apiRequest("POST", "/api/import-linkedin-jobs", { jobs: batchPayload });
         const data = await r.json();
 
         // Log the full response from the backend for debugging
@@ -374,7 +384,9 @@ export default function JobDiscovery() {
         if (data.scanBatchLabel) accumulated.scanBatchLabel = data.scanBatchLabel;
         if (Array.isArray(data.skipLog)) accumulated.skipLog.push(...data.skipLog);
       } catch (err: any) {
-        toast({ title: "Batch Import Failed", description: err?.message, variant: "destructive" });
+        console.error("[LI Import] Batch error:", err?.message ?? err);
+        accumulated.failed += batch.length;
+        toast({ title: "Batch Import Failed", description: err?.message ?? "Server error — check console for details", variant: "destructive" });
         break;
       }
     }
@@ -397,12 +409,19 @@ export default function JobDiscovery() {
     const allDupes   = nothingNew && accumulated.duplicates > 0 && accumulated.insufficient === 0 && accumulated.junk === 0 && accumulated.failed === 0;
 
     console.log("[LI Import] Final accumulated:", accumulated);
+    console.log(`[LI Import] ── Summary ──`);
+    console.log(`[LI Import]   Jobs scraped from Apify: ${accumulated.scrapedCount}`);
+    console.log(`[LI Import]   Jobs sent to server:     ${accumulated.sentCount}`);
+    console.log(`[LI Import]   Jobs inserted:           ${accumulated.imported}`);
+    console.log(`[LI Import]   Jobs duplicates:         ${accumulated.duplicates}`);
+    console.log(`[LI Import]   Jobs invalid/missing:    ${accumulated.junk + accumulated.insufficient}`);
+    console.log(`[LI Import]   Errors:                  ${accumulated.failed}`);
 
     toast({
       title: !nothingNew
         ? "Import Complete"
         : allDupes ? "All Jobs Already in Inbox" : "Nothing Imported",
-      description: `${accumulated.rawCount} sent — ${parts.join(", ")}`,
+      description: `Scraped: ${accumulated.scrapedCount} · Sent: ${accumulated.sentCount} · ${parts.join(", ")}`,
       variant: !nothingNew ? "default" : "destructive",
     });
   };
@@ -1203,59 +1222,88 @@ export default function JobDiscovery() {
           )}
 
           {liImportSummary && (
-            <div className="space-y-2" data-testid="li-import-summary">
-              <div className="rounded border bg-muted/50 px-3 py-2 text-sm">
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  <span className="font-medium">Last import:</span>
-                  <span className="text-muted-foreground">{liImportSummary.rawCount} sent</span>
-                  <span className={liImportSummary.imported > 0 ? "text-green-600 font-medium" : "text-muted-foreground"}>
-                    ✓ {liImportSummary.imported} inserted
-                  </span>
-                  {(liImportSummary.repaired ?? 0) > 0 && (
-                    <span className="text-blue-600 font-medium">⟳ {liImportSummary.repaired} repaired</span>
-                  )}
-                  {liImportSummary.duplicates > 0 && (
-                    <span className="text-yellow-600">⊘ {liImportSummary.duplicates} duplicate{liImportSummary.duplicates !== 1 ? "s" : ""}</span>
-                  )}
-                  {(liImportSummary.junk ?? 0) > 0 && (
-                    <span className="text-orange-600">⊘ {liImportSummary.junk} invalid (junk page)</span>
-                  )}
-                  {(liImportSummary.insufficient ?? 0) > 0 && (
-                    <span className="text-muted-foreground">⊘ {liImportSummary.insufficient} missing fields</span>
-                  )}
-                  {liImportSummary.failed > 0 && (
-                    <span className="text-destructive">✕ {liImportSummary.failed} error{liImportSummary.failed !== 1 ? "s" : ""}</span>
-                  )}
-                </div>
+            <div data-testid="li-import-summary" className="rounded border bg-muted/40 overflow-hidden">
+              {/* Header */}
+              <div className={`px-3 py-2 text-sm font-semibold flex items-center gap-2 ${liImportSummary.imported > 0 || (liImportSummary.repaired ?? 0) > 0 ? "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300" : "bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300"}`}>
+                {liImportSummary.imported > 0 || (liImportSummary.repaired ?? 0) > 0
+                  ? "✓ Import Complete"
+                  : liImportSummary.duplicates > 0
+                    ? "⊘ All Jobs Already in Inbox"
+                    : "⚠ Nothing Imported"}
                 {liImportSummary.scanBatchLabel && (
-                  <div className="text-xs text-muted-foreground mt-1">{liImportSummary.scanBatchLabel}</div>
+                  <span className="ml-auto font-normal text-xs opacity-70">{liImportSummary.scanBatchLabel}</span>
                 )}
               </div>
 
-              {/* Nothing new but clear reason breakdown */}
-              {liImportSummary.imported === 0 && (liImportSummary.repaired ?? 0) === 0 && (
-                <div className="rounded border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30 px-3 py-2 text-sm text-amber-800 dark:text-amber-300" data-testid="li-nothing-imported-reason">
-                  <p className="font-medium mb-1">No new jobs imported — reasons:</p>
-                  <ul className="list-disc list-inside space-y-0.5 text-xs">
-                    {liImportSummary.duplicates > 0 && <li>{liImportSummary.duplicates} already exist in your inbox (duplicate detection)</li>}
-                    {(liImportSummary.junk ?? 0) > 0 && <li>{liImportSummary.junk} skipped — invalid page (login/portal redirect)</li>}
-                    {(liImportSummary.insufficient ?? 0) > 0 && <li>{liImportSummary.insufficient} skipped — missing title and URL fields</li>}
-                    {liImportSummary.failed > 0 && <li>{liImportSummary.failed} failed due to server error</li>}
-                    {liImportSummary.duplicates === 0 && (liImportSummary.junk ?? 0) === 0 && (liImportSummary.insufficient ?? 0) === 0 && liImportSummary.failed === 0 && (
-                      <li>No jobs were received by the server (check console for details)</li>
-                    )}
-                  </ul>
-                  {(liImportSummary.skipLog ?? []).length > 0 && (
-                    <details className="mt-1">
-                      <summary className="cursor-pointer text-xs font-medium">Skip details ({liImportSummary.skipLog!.length})</summary>
-                      <ul className="mt-1 space-y-0.5 font-mono text-[10px] max-h-32 overflow-y-auto">
-                        {liImportSummary.skipLog!.map((s, i) => (
-                          <li key={i}>{s.title} → {s.reason}</li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
+              {/* Log rows */}
+              <div className="divide-y divide-border">
+                <div className="px-3 py-1.5 flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Jobs scraped from LinkedIn</span>
+                  <span className="font-mono font-semibold" data-testid="log-scraped">{liImportSummary.scrapedCount}</span>
                 </div>
+                <div className="px-3 py-1.5 flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Jobs sent to import</span>
+                  <span className="font-mono font-semibold">{liImportSummary.sentCount}</span>
+                </div>
+                <div className="px-3 py-1.5 flex items-center justify-between text-sm">
+                  <span className={liImportSummary.imported > 0 ? "text-green-700 dark:text-green-400 font-medium" : "text-muted-foreground"}>
+                    Jobs inserted ✓
+                  </span>
+                  <span className={`font-mono font-semibold ${liImportSummary.imported > 0 ? "text-green-700 dark:text-green-400" : "text-muted-foreground"}`} data-testid="log-inserted">
+                    {liImportSummary.imported}
+                  </span>
+                </div>
+                {(liImportSummary.repaired ?? 0) > 0 && (
+                  <div className="px-3 py-1.5 flex items-center justify-between text-sm">
+                    <span className="text-blue-600 dark:text-blue-400 font-medium">Jobs updated (data repair) ⟳</span>
+                    <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{liImportSummary.repaired}</span>
+                  </div>
+                )}
+                <div className="px-3 py-1.5 flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Jobs skipped as duplicates ⊘</span>
+                  <span className="font-mono font-semibold" data-testid="log-duplicates">{liImportSummary.duplicates}</span>
+                </div>
+                {((liImportSummary.junk ?? 0) + (liImportSummary.insufficient ?? 0)) > 0 && (
+                  <div className="px-3 py-1.5 flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Jobs skipped (invalid / missing fields) ⊘</span>
+                    <span className="font-mono font-semibold">{(liImportSummary.junk ?? 0) + (liImportSummary.insufficient ?? 0)}</span>
+                  </div>
+                )}
+                <div className="px-3 py-1.5 flex items-center justify-between text-sm">
+                  <span className={liImportSummary.failed > 0 ? "text-destructive font-medium" : "text-muted-foreground"}>
+                    Errors ✕
+                  </span>
+                  <span className={`font-mono font-semibold ${liImportSummary.failed > 0 ? "text-destructive" : "text-muted-foreground"}`} data-testid="log-errors">
+                    {liImportSummary.failed}
+                  </span>
+                </div>
+              </div>
+
+              {/* "Nothing imported" explanation */}
+              {liImportSummary.imported === 0 && (liImportSummary.repaired ?? 0) === 0 && liImportSummary.sentCount === 0 && (
+                <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20 border-t" data-testid="li-nothing-imported-reason">
+                  No jobs were sent to the server — check that your search returned results above.
+                </div>
+              )}
+              {liImportSummary.imported === 0 && (liImportSummary.repaired ?? 0) === 0 && liImportSummary.sentCount > 0 && (
+                <div className="px-3 py-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20 border-t" data-testid="li-nothing-imported-reason">
+                  All {liImportSummary.sentCount} jobs sent to server were either duplicates, invalid, or errored.
+                  {liImportSummary.duplicates > 0 && ` ${liImportSummary.duplicates} already exist in your inbox.`}
+                </div>
+              )}
+
+              {/* Skip log collapsible */}
+              {(liImportSummary.skipLog ?? []).length > 0 && (
+                <details className="border-t">
+                  <summary className="px-3 py-1.5 text-xs text-muted-foreground cursor-pointer hover:bg-muted/30 select-none">
+                    Skip log ({liImportSummary.skipLog!.length} entries)
+                  </summary>
+                  <ul className="px-3 pb-2 pt-1 space-y-0.5 font-mono text-[10px] text-muted-foreground max-h-32 overflow-y-auto">
+                    {liImportSummary.skipLog!.map((s, i) => (
+                      <li key={i}><span className="text-foreground">{s.title}</span> → {s.reason}</li>
+                    ))}
+                  </ul>
+                </details>
               )}
             </div>
           )}
