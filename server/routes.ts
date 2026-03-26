@@ -2707,6 +2707,128 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Job Search Score ─────────────────────────────────────────────────────────
+
+  app.get("/api/job-search-score", async (req, res) => {
+    try {
+      const [allJobs, allContacts] = await Promise.all([
+        storage.getJobs(),
+        storage.getContacts(),
+      ]);
+
+      const APPLIED_STATUSES = new Set(["Applied", "Interview", "Final Round", "Offer", "Rejected", "No Response"]);
+      const INTERVIEW_STATUSES = new Set(["Interview", "Final Round", "Offer"]);
+
+      const applied = allJobs.filter(j => APPLIED_STATUSES.has(j.status));
+      const interviews = allJobs.filter(j => INTERVIEW_STATUSES.has(j.status));
+      const activeInterviews = allJobs.filter(j => j.status === "Interview" || j.status === "Final Round").length;
+
+      // Helper: Monday-anchored ISO week key
+      const weekKey = (dateStr: string | null): string | null => {
+        if (!dateStr) return null;
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return null;
+        const mon = new Date(d);
+        mon.setDate(d.getDate() - d.getDay() + 1);
+        return mon.toISOString().split("T")[0];
+      };
+
+      const currentWeekKey = weekKey(new Date().toISOString())!;
+
+      // Current week components
+      const appsThisWeek = applied.filter(j => weekKey(j.dateApplied) === currentWeekKey).length;
+      const followUpsThisWeek = allContacts.filter(c => weekKey(c.lastContactDate) === currentWeekKey).length;
+      const networkingThisWeek = allContacts.filter(c => {
+        const k = weekKey(c.createdAt instanceof Date ? c.createdAt.toISOString() : String(c.createdAt));
+        return k === currentWeekKey;
+      }).length;
+
+      // Conversion rate
+      const conversionRate = applied.length > 0
+        ? (interviews.length / applied.length) * 100
+        : 0;
+
+      // Avg ATS score of applied jobs that have one
+      const atsScores = applied.filter(j => (j.atsScoreAtApply ?? 0) > 0).map(j => j.atsScoreAtApply!);
+      const avgAtsScore = atsScores.length > 0
+        ? atsScores.reduce((a, b) => a + b, 0) / atsScores.length
+        : 0;
+
+      // Score each component (max points shown)
+      const scoreComponent = (value: number, target: number, maxPts: number) =>
+        Math.round(Math.min(value, target) / target * maxPts);
+
+      const components = [
+        { label: "Applications this week", value: appsThisWeek, target: 8, maxPts: 25, unit: "apps" },
+        { label: "Active interviews", value: activeInterviews, target: 4, maxPts: 25, unit: "interviews" },
+        { label: "Follow-ups sent", value: followUpsThisWeek, target: 4, maxPts: 15, unit: "this week" },
+        { label: "Networking contacts", value: networkingThisWeek, target: 4, maxPts: 15, unit: "added this week" },
+        { label: "Conversion rate", value: Math.round(conversionRate), target: 30, maxPts: 10, unit: "%" },
+        { label: "Resume ATS score", value: Math.round(avgAtsScore), target: 100, maxPts: 10, unit: "%" },
+      ];
+
+      const totalScore = components.reduce(
+        (sum, c) => sum + scoreComponent(c.value, c.target, c.maxPts), 0
+      );
+
+      const componentScores = components.map(c => ({
+        ...c,
+        pts: scoreComponent(c.value, c.target, c.maxPts),
+        pct: Math.round(scoreComponent(c.value, c.target, c.maxPts) / c.maxPts * 100),
+      }));
+
+      // Grade
+      const grade =
+        totalScore >= 85 ? "Excellent" :
+        totalScore >= 70 ? "Good" :
+        totalScore >= 50 ? "Fair" : "Needs Work";
+
+      // ── 8-week trend ─────────────────────────────────────────────────────────
+      // Fixed components (interviews, conversion, ATS) stay constant across weeks
+      const fixedPts = scoreComponent(activeInterviews, 4, 25)
+        + scoreComponent(Math.round(conversionRate), 30, 10)
+        + scoreComponent(Math.round(avgAtsScore), 100, 10);
+
+      const trend: { week: string; score: number }[] = [];
+      for (let w = 7; w >= 0; w--) {
+        const d = new Date();
+        d.setDate(d.getDate() - w * 7);
+        const mon = new Date(d);
+        mon.setDate(d.getDate() - d.getDay() + 1);
+        const wk = mon.toISOString().split("T")[0];
+
+        const wApps = applied.filter(j => weekKey(j.dateApplied) === wk).length;
+        const wFollowUps = allContacts.filter(c => weekKey(c.lastContactDate) === wk).length;
+        const wNetworking = allContacts.filter(c => {
+          const k = weekKey(c.createdAt instanceof Date ? c.createdAt.toISOString() : String(c.createdAt));
+          return k === wk;
+        }).length;
+
+        const wScore = fixedPts
+          + scoreComponent(wApps, 8, 25)
+          + scoreComponent(wFollowUps, 4, 15)
+          + scoreComponent(wNetworking, 4, 15);
+
+        const label = new Date(wk).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        trend.push({ week: label, score: wScore });
+      }
+
+      // Previous week score for delta
+      const prevWeekScore = trend.length >= 2 ? trend[trend.length - 2].score : null;
+      const scoreDelta = prevWeekScore !== null ? totalScore - prevWeekScore : null;
+
+      res.json({
+        score: totalScore,
+        grade,
+        scoreDelta,
+        components: componentScores,
+        trend,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // ─── Resume Version Management ────────────────────────────────────────────────
 
   // List all resume versions (with optional ?jobId= filter)
