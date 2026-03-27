@@ -60,22 +60,65 @@ git clone https://github.com/ShyamTangiralla/Job-Copilot.git
 cd Job-Copilot
 npm install
 npm run dev
+```
 ## Screenshots
 
 ### Dashboard
-(Add dashboard screenshot here later)
+![Dashboard 1](screenshots/dashboard-1.png)
+![Dashboard 2](screenshots/dashboard-2.png)
+
+### Job Discovery
+![Job Discovery 1](screenshots/jobs-discovery-1.png)
+![Job Discovery 2](screenshots/jobs-discovery-2.png)
+![Job Discovery 3](screenshots/jobs-discovery-3.png)
 
 ### Jobs Inbox
-(Add jobs inbox screenshot here later)
+![Jobs Inbox 1](screenshots/jobs-inbox-1.png)
+![Jobs Inbox 2](screenshots/jobs-inbox-2.png)
+![Jobs Inbox 3](screenshots/jobs-inbox-3.png)
+![Jobs Inbox 4](screenshots/jobs-inbox-4.png)
+![Jobs Inbox 5](screenshots/jobs-inbox-5.png)
 
-### Resume Vault
-(Add resume vault screenshot here later)
+### Import Jobs
+![Import Jobs](screenshots/import-jobs.png)
 
-### Analytics
-(Add analytics screenshot here later)
+### Pipeline Analytics
+![Pipeline Analytics](screenshots/pipeline-analytics.png)
 
 ### Interview Tracker
-(Add interview tracker screenshot here later)
+![Interview Tracker](screenshots/interview-tracker.png)
+
+### Offer Tracker
+![Offer Tracker](screenshots/offer-tracker.png)
+
+### Networking Tracker
+![Networking Tracker](screenshots/networking-tracker.png)
+
+### Resume Vault
+![Resume Vault](screenshots/resume-vault.png)
+
+### Resume Versions
+![Resume Versions](screenshots/resume-versions.png)
+
+### Resume Optimization / ATS
+![Resume Optimization 1](screenshots/resume-optimization-1.png)
+![Resume Optimization 2](screenshots/resume-optimization-2.png)
+
+### Quick Capture
+![Quick Capture](screenshots/quick-capture.png)
+
+### Analytics – Performance
+![Analytics Performance](screenshots/analytics-performance.png)
+
+### Analytics – Pipeline
+![Analytics Pipeline](screenshots/analytics-pipeline.png)
+
+### Analytics – Salary
+![Analytics Salary 1](screenshots/analytics-salary-1.png)
+![Analytics Salary 2](screenshots/analytics-salary-2.png)
+
+### Analytics – Job Market
+![Analytics Job Market](screenshots/analytics-jobmarket.png)
 
 ## Author
 Shyam Reddy  
